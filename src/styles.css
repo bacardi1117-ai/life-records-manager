@@ -1255,3 +1255,113 @@ textarea {
     scroll-behavior: auto !important;
   }
 }
+/* Cloud Items are intentionally separate from local Mock maintenance data. */
+.settings-link {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--green);
+}
+.bridge-host {
+  display: none;
+}
+.connection-page {
+  max-width: 850px;
+  margin: auto;
+}
+.connection-page .panel {
+  margin-bottom: 22px;
+}
+.connection-page h2 {
+  margin-bottom: 18px;
+}
+.connection-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 14px 0;
+}
+.connection-actions input {
+  flex: 1;
+}
+.connection-state,
+.cloud-notice {
+  font-size: 13px;
+  margin: 18px 0;
+  color: #537261;
+}
+.connection-help p {
+  font-size: 13px;
+  line-height: 1.9;
+  margin: 14px 0;
+  color: #647668;
+}
+.cloud-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 18px 0;
+  font-size: 13px;
+}
+.cloud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  align-items: center;
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+.cloud-row p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cloud-item-title {
+  color: var(--green);
+  padding: 8px 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.cloud-row > div {
+  min-width: 0;
+}
+.cloud-details > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0;
+}
+.cloud-details dt,
+.cloud-details dd {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .header-inner {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .site-header {
+    height: auto;
+    min-height: 92px;
+  }
+  .header-inner {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .header-right {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .header-right .mock-label {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+  .header-right {
+    max-width: 170px;
+  }
+  .settings-link {
+    font-size: 11px;
+  }
+  .connection-actions input {
+    flex-basis: 100%;
+  }
+}
