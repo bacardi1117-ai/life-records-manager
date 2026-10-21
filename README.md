@@ -2,6 +2,8 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
+目前版本保留完整本機 Mock，並新增獨立 Google Sheets Items 橋接介面。雲端串接已通過模擬測試，實際 Google 登入與部署端呼叫尚待驗證；Google 日曆提醒仍為後續規劃。
+
 ## 技術架構
 - 前端：React + TypeScript + Vite
 - 部署：GitHub Pages
@@ -104,3 +106,64 @@ git push -u origin HEAD
 ```
 
 合併至 `main` 後會觸發部署。若目前就在 `main`，推送會直接觸發部署；請先確認分支與團隊流程。不要加入 `.env`、使用者照片、`node_modules/` 或 `dist/`。
+
+## Google Sheets Items 橋接整合
+
+### 在 GitHub Pages 設定自己的 Web App
+
+此功能須在本 PR 合併並完成 Pages 部署後才會出現在正式網站。
+
+1. 開啟網站上方的「連線設定」（`#/settings`）。
+2. 貼上自己的 Apps Script Web App `/exec` URL，只接受 HTTPS、`script.google.com` 的 `/macros/s/<deployment-id>/exec` 路徑，不含查詢參數或片段。不要把實際 URL 寫進程式、README、Issue 或 PR。
+3. 維持部署權限「只有我自己」。必要時使用「在新分頁開啟 Web App」，登入部署所屬 Google 帳號；回到網站按「連線並儲存網址」。
+4. 前端在 iframe URL 附加每次新產生的 token。收到 `ready` 並成功解析 `getItems` 回傳陣列後才儲存網址，並顯示已連線。
+5. 進入「雲端 Items」（`#/cloud`）即可新增、查詢、修改、封存與還原。若後端清單排除封存紀錄，可用 item_id 查詢，是否能取得封存紀錄仍取決於已部署後端。
+6. 重新整理後保留網址，但不自動連線；按「連接已儲存的網址」重新建立 iframe。可中斷連線或移除網址，不影響本機 Mock 紀錄。
+
+網址以 `life-records-manager:apps-script-url:v1` 儲存在此瀏覽器 localStorage，與 `life-records-manager:v1` 的本機事項完全分離。隨機 token 只活在單次連線記憶體與 iframe URL，不寫入設定。雲端 Items 只保存在工作階段記憶體，不寫入本機 Mock，也不自動上傳示範資料。
+
+### 通訊協定與欄位
+
+參考 [keeping_accounts/app.js](https://github.com/bacardi1117-ai/keeping_accounts/blob/5c6184392665a466b46ba732d484daf3448bfb03/app.js) 與 [Bridge.html](https://github.com/bacardi1117-ai/keeping_accounts/blob/5c6184392665a466b46ba732d484daf3448bfb03/apps-script/Bridge.html)。沿用 iframe + postMessage、每次連線 UUID token、ready 握手與 request ID；未使用直接跨網域 fetch。
+
+| 前端 action | 後端橋接函式 | payload |
+| --- | --- | --- |
+| `getItems` | `bridgeGetItems` | `{}` |
+| `getItem` | `bridgeGetItem` | `{ item_id }` |
+| `createItem` | `bridgeCreateItem` | Items 可編輯基本欄位 |
+| `updateItem` | `bridgeUpdateItem` | `{ item_id, changes }` |
+| `archiveItem` | `bridgeArchiveItem` | `{ item_id }` |
+| `restoreItem` | `bridgeRestoreItem` | `{ item_id }` |
+
+共用封包欄位為 `channel: "life-records-v1"`、`token`、`type`。請求含 `id`、`action`、`payload`；回應為 `type: "response"`，含同一個 `id`、布林 `ok`，以及 `result` 或 `error`。
+
+`getItems` 必須直接回傳陣列，不接受 `{items: [...]}`。`getItem` Adapter 預期直接回傳單一同型別物件；實際回傳需於部署驗證時確認。Items 欄位：
+
+- `item_id`、`name`、`category`、`item_date`、`brand`、`model`、`location`、`warranty_date`、`created_at`、`updated_at` 為字串。
+- `amount` 為非負有限數值，`status` 為 `active` 或 `archived`。
+- `item_date` 為 YYYY-MM-DD；`warranty_date` 可為空字串或 YYYY-MM-DD。
+- 新增與修改只送出 `name/category/item_date/amount/brand/model/location/warranty_date`。ID、狀態與時間戳由後端處理；不送出本機保養、歷史、備註或圖片欄位。
+
+**已知部署端問題：**使用者指出目前 Bridge.html 的 ACTIONS 對照呼叫仍有待修正／驗證，由另行提供的後端修正版處理。本 PR 只使用左側 action 名稱，不修改或部署任何 Apps Script 程式，不宣稱目前部署版本一定能呼叫成功。
+
+### 來源檢查與實際 iframe 限制
+
+- HtmlService 有內層 iframe。Adapter 由合法 Google origin 加上當次 token 的 ready 訊息取得來源視窗，再固定該視窗與 exact origin；後續 response 必須同時符合 channel、token、source、origin、id 與布林 ok。
+- 請求只送往固定來源，未使用 `*` 發送資料。重複 ready 不會替換已固定的視窗。取消、重新連線與卸載會移除 iframe、監聽器、計時器並拒絕未完成請求。
+- **origin/source 檢查與隨機 token 是通訊關聯機制，不是使用者身分驗證。它們不能保護匿名公開的寫入 API。**此實作不要求將部署改成「任何人」。
+- Google 登入頁的嵌入政策、第三方 Cookie、跨網站登入狀態、Google HtmlService frame 政策及後端允許的前端 origin，均可能讓「只有我自己」部署無法在 GitHub Pages iframe 中使用。新分頁可以登入，不代表 iframe 就一定可以工作。
+- 真實驗證須在擁有部署權限的帳號、正式 Pages origin、實際瀏覽器中進行：先確認新分頁可用，再確認 ready、getItems 讀取及非敏感測試事項的完整操作。後端允許來源需與正式網站 origin 一致（origin 不含路徑）；本次未更改後端允許來源。
+- ready 逾時不會顯示連線成功。寫入逾時可能代表後端已執行，前端不會自動重送；先重新讀取核對。寫入成功但重新讀取失敗時，會關閉已送出的表單並提示重新讀取，避免重複新增。
+- 失敗時保留本機資料及上次成功讀取的雲端畫面，標為未確認最新狀態，重新讀取成功前停用寫入。未提供跨裝置同步本機資料的功能。
+
+### 新增程式與測試
+
+- `src/api/appsScriptBridge.ts`：iframe transport、握手、來源固定、request correlation、逾時與 dispose。
+- `src/api/connectionSettings.ts`：本機 URL 設定，與 Mock 儲存隔離。
+- `src/api/sheetsItems.ts`：Items DTO、欄位驗證及 action／payload 對應。
+- `src/hooks/useSheetsConnection.ts`：連線生命週期、資料狀態、取消及失敗保護。
+- `src/components/ConnectionSettings.tsx`、`SheetsItems.tsx`：設定與雲端 Items 操作介面。
+- `tests/bridge.test.ts`、`connectionSettings.test.ts`、`sheetsItems.test.ts`：協定、生命週期、設定隔離、欄位與動作測試。
+- `tests/e2e/bridge.spec.ts`、`tests/fixtures/googleBridge.ts`：以 Playwright 攔截全部 Google 測試網址，模擬 Google 外層與內層 iframe；測試檔使用不存在的合成 deployment ID，不含真實 Web App URL。
+
+新增測試需要開發相依 `jsdom`；使用 `npm ci` 安裝。執行 `npm test`、`npm run build`，再執行 `npm run test:e2e`（本雲端環境加上 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium`）。這些測試驗證前端及模擬協定，**不驗證真實 Google 登入、Sheet 寫入或部署端 ACTIONS 修正**。

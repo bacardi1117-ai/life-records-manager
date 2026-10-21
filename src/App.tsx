@@ -4,8 +4,14 @@ import type { LifeItem, MaintenanceRecord } from "./models";
 import { mockApi } from "./api/mockApi";
 import Dashboard from "./components/Dashboard";
 import Detail from "./components/Detail";
+import ConnectionSettings from "./components/ConnectionSettings";
+import SheetsItems from "./components/SheetsItems";
+import { useSheetsConnection } from "./hooks/useSheetsConnection";
 import { ItemForm, Modal } from "./components/Forms";
 export default function App() {
+  const cloud = useSheetsConnection();
+  const isCloudPage =
+    location.hash === "#/cloud" || location.hash === "#/settings";
   const [items, setItems] = useState<LifeItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [route, setRoute] = useState(location.hash);
@@ -66,16 +72,27 @@ export default function App() {
             生活事項
           </a>
           <div className="header-right">
+            <a className="settings-link" href="#/settings">
+              連線設定
+            </a>
+            <a className="settings-link" href="#/cloud">
+              雲端 Items
+            </a>
             <span className="mock-label">
               <i />
-              本機示範模式
+              {isCloudPage
+                ? cloud.status === "connected"
+                  ? "雲端 Items 已連線"
+                  : "雲端尚未連線"
+                : "本機 Mock 模式"}
             </span>
             <span className="avatar">日</span>
           </div>
         </div>
       </header>
+      <div ref={cloud.host} className="bridge-host" />
       <main>
-        {error && (
+        {!isCloudPage && error && (
           <div role="alert" className="error-banner">
             {error}
             <button onClick={() => setError("")} aria-label="關閉錯誤訊息">
@@ -83,7 +100,11 @@ export default function App() {
             </button>
           </div>
         )}
-        {!loaded ? (
+        {route === "#/settings" ? (
+          <ConnectionSettings cloud={cloud} />
+        ) : route === "#/cloud" ? (
+          <SheetsItems cloud={cloud} />
+        ) : !loaded ? (
           <div className="empty">
             {error
               ? "資料載入失敗，請保留現有儲存資料並檢查錯誤。"
@@ -117,7 +138,9 @@ export default function App() {
           日日有序 · 把日子過得井井有條
         </span>
         <span>
-          資料僅存於此瀏覽器，清除網站資料會遺失紀錄。
+          {isCloudPage
+            ? "雲端僅串接 Items；保養、歷史與圖片仍為本機 Mock。"
+            : "資料僅存於此瀏覽器，清除網站資料會遺失紀錄。"}
           <ArrowUpRight size={13} />
         </span>
       </footer>
