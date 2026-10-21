@@ -10,11 +10,15 @@ import {
   Droplets,
 } from "lucide-react";
 import type { LifeItem } from "../models";
-import { daysUntil, dueLabel, nextDue } from "../lib/dates";
+import { daysUntil, dueLabel, nextDue, money } from "../lib/dates";
 export default function Dashboard({
   items,
   add,
+  cloud = false,
+  readOnly = false,
 }: {
+  cloud?: boolean;
+  readOnly?: boolean;
   items: LifeItem[];
   add: () => void;
 }) {
@@ -42,7 +46,7 @@ export default function Dashboard({
           <h1>把生活，照顧得更好。</h1>
           <p>重要的小事都記在這裡，讓每一天更從容。</p>
         </div>
-        <button className="primary" onClick={add}>
+        <button className="primary" onClick={add} disabled={readOnly}>
           <Plus size={18} />
           新增生活事項
         </button>
@@ -65,10 +69,12 @@ export default function Dashboard({
             <CalendarDays />
           </span>
           <div>
-            <p>30 天內待保養</p>
+            <p>{cloud ? "事項總金額" : "30 天內待保養"}</p>
             <strong>
-              {upcoming.length}
-              <small>項</small>
+              {cloud
+                ? money(items.reduce((sum, item) => sum + item.amount, 0))
+                : upcoming.length}
+              {!cloud && <small>項</small>}
             </strong>
           </div>
         </div>
@@ -77,9 +83,11 @@ export default function Dashboard({
             <ShieldCheck />
           </span>
           <div>
-            <p>已逾期保養</p>
+            <p>{cloud ? "已封存事項" : "已逾期保養"}</p>
             <strong>
-              {overdue.length}
+              {cloud
+                ? items.filter((item) => item.status === "archived").length
+                : overdue.length}
               <small>項</small>
             </strong>
           </div>
@@ -124,7 +132,7 @@ export default function Dashboard({
               const due = dates[0];
               return (
                 <a
-                  href={`#/items/${item.id}`}
+                  href={`#/items/${encodeURIComponent(item.id)}`}
                   className="item-card"
                   key={item.id}
                 >
@@ -149,20 +157,30 @@ export default function Dashboard({
                         <CalendarDays size={14} />
                         {item.date}
                       </span>
-                      <span>{item.tasks.length} 個定期項目</span>
+                      <span>
+                        {cloud
+                          ? money(item.amount)
+                          : `${item.tasks.length} 個定期項目`}
+                      </span>
                     </div>
                     <div className="item-due">
                       <span
                         className={`dot ${due && daysUntil(due) < 0 ? "late" : ""}`}
                       />
-                      {due ? `下次保養 ${due}` : "尚未設定定期保養"}
+                      {cloud
+                        ? item.status === "archived"
+                          ? "已封存"
+                          : "使用中"
+                        : due
+                          ? `下次保養 ${due}`
+                          : "尚未設定定期保養"}
                       {due && <small>{dueLabel(due)}</small>}
                     </div>
                   </div>
                 </a>
               );
             })}
-            <button className="add-card" onClick={add}>
+            <button className="add-card" onClick={add} disabled={readOnly}>
               <span>
                 <Plus size={26} />
               </span>
@@ -180,37 +198,45 @@ export default function Dashboard({
             <CalendarDays size={19} />
           </div>
           <div className="schedule-card">
-            <div className="schedule-intro">
-              下一步，照顧生活<span>依到期日期排列</span>
-            </div>
-            {tasks
-              .sort((a, b) => a.due.localeCompare(b.due))
-              .slice(0, 5)
-              .map(({ item, task, due }) => (
-                <a
-                  className="schedule-row"
-                  href={`#/items/${item.id}`}
-                  key={`${item.id}-${task.id}`}
-                >
-                  <div
-                    className={`date-tile ${daysUntil(due) < 0 ? "past" : ""}`}
-                  >
-                    <span>{Number(due.slice(5, 7))} 月</span>
-                    <strong>{due.slice(8)}</strong>
-                  </div>
-                  <div>
-                    <strong>{task.name}</strong>
-                    <p>{item.name}</p>
-                    <small
-                      className={daysUntil(due) < 0 ? "late-text" : "muted"}
+            {cloud ? (
+              <p className="cloud-notice">
+                定期保養、歷史紀錄、備註與照片尚未支援雲端同步。
+              </p>
+            ) : (
+              <>
+                <div className="schedule-intro">
+                  下一步，照顧生活<span>依到期日期排列</span>
+                </div>
+                {tasks
+                  .sort((a, b) => a.due.localeCompare(b.due))
+                  .slice(0, 5)
+                  .map(({ item, task, due }) => (
+                    <a
+                      className="schedule-row"
+                      href={`#/items/${encodeURIComponent(item.id)}`}
+                      key={`${item.id}-${task.id}`}
                     >
-                      {dueLabel(due)}
-                    </small>
-                  </div>
-                </a>
-              ))}
-            {!tasks.length && (
-              <p className="empty">新增定期子項目後，待辦會顯示在這裡。</p>
+                      <div
+                        className={`date-tile ${daysUntil(due) < 0 ? "past" : ""}`}
+                      >
+                        <span>{Number(due.slice(5, 7))} 月</span>
+                        <strong>{due.slice(8)}</strong>
+                      </div>
+                      <div>
+                        <strong>{task.name}</strong>
+                        <p>{item.name}</p>
+                        <small
+                          className={daysUntil(due) < 0 ? "late-text" : "muted"}
+                        >
+                          {dueLabel(due)}
+                        </small>
+                      </div>
+                    </a>
+                  ))}
+                {!tasks.length && (
+                  <p className="empty">新增定期子項目後，待辦會顯示在這裡。</p>
+                )}
+              </>
             )}
           </div>
           <div className="tip-card">

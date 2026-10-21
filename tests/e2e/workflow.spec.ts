@@ -87,9 +87,13 @@ test("seed example, editing, direct detail links and no horizontal overflow", as
   await page.getByRole("button", { name: "編輯資料" }).click();
   await page.getByLabel("地點").fill("二樓浴室");
   await page.getByRole("button", { name: "儲存事項" }).click();
-  await expect(page.getByText("二樓浴室")).toBeVisible();
+  await expect(
+    page.locator(".basic-info").getByText("二樓浴室", { exact: true }),
+  ).toBeVisible();
   await page.reload();
-  await expect(page.getByText("二樓浴室")).toBeVisible();
+  await expect(
+    page.locator(".basic-info").getByText("二樓浴室", { exact: true }),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

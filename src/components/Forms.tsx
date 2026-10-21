@@ -26,7 +26,14 @@ export function Modal({
     return () => ref.current?.close();
   }, []);
   return (
-    <dialog ref={ref} onCancel={close} aria-label={title}>
+    <dialog
+      ref={ref}
+      onCancel={(e) => {
+        e.preventDefault();
+        close();
+      }}
+      aria-label={title}
+    >
       <div className="modal-head">
         <h2>{title}</h2>
         <button className="icon-button" onClick={close} aria-label="關閉">
@@ -87,28 +94,41 @@ export function ItemForm({
   item,
   submit,
   busy,
+  cloud = false,
+  disabled = false,
+  recover,
 }: {
+  cloud?: boolean;
+  disabled?: boolean;
+  recover?: () => Promise<void>;
   item?: LifeItem;
-  submit: (item: LifeItem) => Promise<void>;
+  submit: (item: LifeItem, original?: LifeItem) => Promise<void>;
   busy: boolean;
 }) {
+  const initial = useRef(item).current;
   function handle(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
-    void submit({
-      id: item?.id ?? crypto.randomUUID(),
-      name: String(data.get("name")).trim(),
-      date: String(data.get("date")),
-      category: String(data.get("category")),
-      brand: String(data.get("brand")).trim(),
-      location: String(data.get("location")).trim(),
-      amount: Number(data.get("amount")),
-      description: String(data.get("description")).trim(),
-      notes: item?.notes ?? [],
-      photos: item?.photos ?? [],
-      tasks: item?.tasks ?? [],
-      history: item?.history ?? [],
-    }).catch(() => {});
+    void submit(
+      {
+        id: initial?.id ?? "",
+        name: String(data.get("name")).trim(),
+        date: String(data.get("date")),
+        category: String(data.get("category")),
+        brand: String(data.get("brand")).trim(),
+        model: String(data.get("model") ?? "").trim(),
+        warrantyDate: String(data.get("warrantyDate") ?? ""),
+        status: initial?.status ?? "active",
+        location: String(data.get("location")).trim(),
+        amount: Number(data.get("amount")),
+        description: cloud ? "" : String(data.get("description") ?? "").trim(),
+        notes: initial?.notes ?? [],
+        photos: initial?.photos ?? [],
+        tasks: initial?.tasks ?? [],
+        history: initial?.history ?? [],
+      },
+      initial,
+    ).catch(() => {});
   }
   return (
     <form onSubmit={handle} className="form-grid">
@@ -118,7 +138,7 @@ export function ItemForm({
           name="name"
           required
           maxLength={100}
-          defaultValue={item?.name}
+          defaultValue={initial?.name}
           placeholder="例如：電熱水器"
           autoFocus
         />
@@ -130,30 +150,58 @@ export function ItemForm({
             name="date"
             type="date"
             required
-            defaultValue={item?.date ?? today()}
+            defaultValue={initial?.date ?? today()}
           />
         </label>
         <label>
           分類
-          <select name="category" defaultValue={item?.category ?? "家電設備"}>
-            {["家電設備", "居家生活", "交通工具", "健康照護", "其他事項"].map(
-              (c) => (
-                <option key={c}>{c}</option>
-              ),
-            )}
+          <select
+            name="category"
+            defaultValue={initial?.category ?? "家電設備"}
+          >
+            {Array.from(
+              new Set([
+                initial?.category ?? "家電設備",
+                "家電設備",
+                "居家生活",
+                "交通工具",
+                "健康照護",
+                "其他事項",
+              ]),
+            ).map((c) => (
+              <option key={c}>{c}</option>
+            ))}
           </select>
         </label>
       </div>
       <label>
-        品牌 / 型號
-        <input name="brand" defaultValue={item?.brand} maxLength={150} />
+        品牌
+        <input name="brand" defaultValue={initial?.brand} maxLength={150} />
       </label>
+      <div className="field-row">
+        <label>
+          型號
+          <input
+            name="model"
+            defaultValue={initial?.model ?? ""}
+            maxLength={150}
+          />
+        </label>
+        <label>
+          保固日期
+          <input
+            name="warrantyDate"
+            type="date"
+            defaultValue={initial?.warrantyDate ?? ""}
+          />
+        </label>
+      </div>
       <div className="field-row">
         <label>
           地點
           <input
             name="location"
-            defaultValue={item?.location}
+            defaultValue={initial?.location}
             maxLength={150}
           />
         </label>
@@ -165,20 +213,38 @@ export function ItemForm({
             min="0"
             step="0.01"
             required
-            defaultValue={item?.amount ?? 0}
+            defaultValue={initial?.amount ?? 0}
           />
         </label>
       </div>
-      <label>
-        購買及安裝資料
-        <textarea
-          name="description"
-          rows={3}
-          defaultValue={item?.description}
-          maxLength={3000}
-        />
-      </label>
-      <button className="primary" disabled={busy}>
+      {!cloud && (
+        <label>
+          購買及安裝資料
+          <textarea
+            name="description"
+            rows={3}
+            defaultValue={initial?.description}
+            maxLength={3000}
+          />
+        </label>
+      )}
+      {cloud && (
+        <p className="hint">
+          只儲存實際變更的 Items
+          基本欄位；保養、歷史、備註與照片尚未支援雲端同步。
+        </p>
+      )}
+      {recover && (
+        <button
+          type="button"
+          className="secondary"
+          disabled={busy}
+          onClick={() => void recover()}
+        >
+          重新讀取資料並保留草稿
+        </button>
+      )}
+      <button className="primary" disabled={busy || disabled}>
         {busy ? "儲存中…" : "儲存事項"}
       </button>
     </form>

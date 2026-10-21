@@ -1,6 +1,21 @@
+import type { DataSource } from "../models";
 import { validateWebAppUrl } from "./appsScriptBridge";
 export const CONNECTION_KEY = "life-records-manager:apps-script-url:v1";
+export const MODE_KEY = "life-records-manager:data-source:v1";
 export const connectionSettings = {
+  readMode(): DataSource | null {
+    const mode = localStorage.getItem(MODE_KEY);
+    if (mode !== null && mode !== "mock" && mode !== "cloud")
+      throw new Error("資料來源設定無效，請手動選擇資料來源");
+    return mode;
+  },
+  saveMode(mode: DataSource) {
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      throw new Error("無法儲存資料來源選擇，未切換資料來源");
+    }
+  },
   read(): string {
     try {
       return localStorage.getItem(CONNECTION_KEY) ?? "";

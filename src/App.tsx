@@ -1,32 +1,25 @@
 import { useEffect, useState } from "react";
 import { ArrowUpRight, LayoutGrid, Leaf } from "lucide-react";
-import type { LifeItem, MaintenanceRecord } from "./models";
-import { mockApi } from "./api/mockApi";
 import Dashboard from "./components/Dashboard";
 import Detail from "./components/Detail";
 import ConnectionSettings from "./components/ConnectionSettings";
-import SheetsItems from "./components/SheetsItems";
-import { useSheetsConnection } from "./hooks/useSheetsConnection";
+import { useItemsStore } from "./hooks/useItemsStore";
 import { ItemForm, Modal } from "./components/Forms";
 export default function App() {
-  const cloud = useSheetsConnection();
-  const isCloudPage =
-    location.hash === "#/cloud" || location.hash === "#/settings";
-  const [items, setItems] = useState<LifeItem[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { store, state, host } = useItemsStore();
   const [route, setRoute] = useState(location.hash);
   const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [switchingMock, setSwitchingMock] = useState(false);
+  const cloud = state.mode === "cloud";
+  const writable = state.status === "ready" && !state.stale && !state.busy;
+  let itemId: string | null = null;
+  try {
+    if (route.startsWith("#/items/"))
+      itemId = decodeURIComponent(route.slice(8));
+  } catch {
+    itemId = "invalid-id";
+  }
   useEffect(() => {
-    mockApi
-      .list()
-      .then((data) => {
-        setItems(data);
-        setLoaded(true);
-      })
-      .catch((err) => setError(err.message));
     const change = () => {
       setRoute(location.hash);
       window.scrollTo(0, 0);
@@ -35,26 +28,12 @@ export default function App() {
     return () => window.removeEventListener("hashchange", change);
   }, []);
   useEffect(() => {
-    if (!notice) return;
-    const timer = setTimeout(() => setNotice(""), 3500);
-    return () => clearTimeout(timer);
-  }, [notice]);
-  async function mutate(action: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-      setItems(await mockApi.list());
-      setNotice("已儲存，生活又有序了一點。");
-    } catch (err) {
-      setError((err as Error).message);
-      throw err;
-    } finally {
-      setBusy(false);
-    }
-  }
-  const itemId = route.startsWith("#/items/") ? route.slice(8) : null;
-  const item = items.find((i) => i.id === itemId);
+    if (itemId && state.status === "ready") void store.openItem(itemId);
+    else store.closeItem();
+  }, [store, itemId, state.mode, state.status]);
+  useEffect(() => {
+    setAdding(false);
+  }, [state.mode]);
   return (
     <>
       <header className="site-header">
@@ -75,61 +54,130 @@ export default function App() {
             <a className="settings-link" href="#/settings">
               連線設定
             </a>
-            <a className="settings-link" href="#/cloud">
-              雲端 Items
-            </a>
-            <span className="mock-label">
+            <span className="mock-label" data-testid="source-label">
               <i />
-              {isCloudPage
-                ? cloud.status === "connected"
-                  ? "雲端 Items 已連線"
-                  : "雲端尚未連線"
-                : "本機 Mock 模式"}
+              {state.mode === null
+                ? "正在確認資料來源"
+                : cloud
+                  ? "Google Sheets 雲端模式"
+                  : "本機 Mock 模式"}
             </span>
-            <span className="avatar">日</span>
           </div>
         </div>
       </header>
-      <div ref={cloud.host} className="bridge-host" />
+      <div ref={host} className="bridge-host" />
       <main>
-        {!isCloudPage && error && (
-          <div role="alert" className="error-banner">
-            {error}
-            <button onClick={() => setError("")} aria-label="關閉錯誤訊息">
-              ×
-            </button>
-          </div>
-        )}
         {route === "#/settings" ? (
-          <ConnectionSettings cloud={cloud} />
-        ) : route === "#/cloud" ? (
-          <SheetsItems cloud={cloud} />
-        ) : !loaded ? (
-          <div className="empty">
-            {error
-              ? "資料載入失敗，請保留現有儲存資料並檢查錯誤。"
-              : "正在整理生活事項…"}
-          </div>
-        ) : itemId ? (
-          item ? (
-            <Detail
-              error={error}
-              key={item.id}
-              item={item}
-              busy={busy}
-              save={(i) => mutate(() => mockApi.save(i))}
-              complete={(r: MaintenanceRecord) =>
-                mutate(() => mockApi.complete(item.id, r))
-              }
-            />
-          ) : (
-            <div className="empty">
-              <h1>找不到這件生活事項</h1>
-              <a href="#/">回到首頁</a>
-            </div>
-          )
+          <ConnectionSettings
+            store={store}
+            state={state}
+            requestMock={() => setSwitchingMock(true)}
+          />
         ) : (
-          <Dashboard items={items} add={() => setAdding(true)} />
+          <>
+            {state.error && (
+              <p role="alert" className="error-banner">
+                {state.error}
+              </p>
+            )}
+            {state.notice && (
+              <p role="status" className="cloud-notice">
+                {state.notice}
+              </p>
+            )}
+            {cloud && (
+              <div className="source-toolbar">
+                <span>
+                  {state.status === "ready" && !state.stale
+                    ? "Items 已連線；保養、歷史、備註及照片尚未支援雲端同步。"
+                    : "雲端資料尚未就緒，已停止寫入；不會自動回退為 Mock。"}
+                </span>
+                <a href="#/settings" className="text-button">
+                  連線設定
+                </a>
+                {state.status === "ready" ? (
+                  <button
+                    className="secondary"
+                    disabled={state.busy}
+                    onClick={() => void store.refresh()}
+                  >
+                    重新讀取
+                  </button>
+                ) : (
+                  state.url && (
+                    <button
+                      className="secondary"
+                      disabled={state.status === "connecting"}
+                      onClick={() => void store.connect(state.url)}
+                    >
+                      重新連線
+                    </button>
+                  )
+                )}
+              </div>
+            )}
+            {state.stale && state.items.length > 0 && (
+              <p className="cloud-notice">
+                以下為上次讀取的資料；重新讀取成功前不能寫入。
+              </p>
+            )}
+            {state.status === "loading" || state.status === "connecting" ? (
+              <p className="empty">
+                {cloud ? "正在連接 Google Sheets…" : "正在載入本機紀錄…"}
+              </p>
+            ) : !state.mode ? (
+              <a href="#/settings">前往設定選擇資料來源</a>
+            ) : itemId ? (
+              state.detailState === "loading" ? (
+                <p className="empty">正在讀取事項…</p>
+              ) : state.selected?.id === itemId ? (
+                <Detail
+                  key={`${state.mode}:${itemId}`}
+                  item={state.selected}
+                  cloud={cloud}
+                  busy={state.busy}
+                  readOnly={!writable}
+                  error={state.error}
+                  save={store.saveLocal}
+                  update={store.update}
+                  complete={(r) => store.complete(itemId!, r)}
+                  setArchived={(archived) =>
+                    store.setArchived(state.selected!, archived)
+                  }
+                  recover={
+                    state.stale && state.status === "ready"
+                      ? store.refresh
+                      : undefined
+                  }
+                />
+              ) : (
+                <div className="empty">
+                  <h1>
+                    {state.status === "ready"
+                      ? "無法讀取這件生活事項"
+                      : "請先恢復所選資料來源的連線"}
+                  </h1>
+                  <a href="#/">回到首頁</a>
+                  {state.status === "ready" && (
+                    <button
+                      className="secondary"
+                      onClick={() => void store.openItem(itemId!)}
+                    >
+                      重新讀取事項
+                    </button>
+                  )}
+                </div>
+              )
+            ) : (
+              <Dashboard
+                key={state.mode}
+                items={state.items}
+                cloud={cloud}
+                readOnly={!writable}
+                add={() => setAdding(true)}
+              />
+            )}
+          </>
         )}
       </main>
       <footer>
@@ -138,32 +186,67 @@ export default function App() {
           日日有序 · 把日子過得井井有條
         </span>
         <span>
-          {isCloudPage
-            ? "雲端僅串接 Items；保養、歷史與圖片仍為本機 Mock。"
+          {cloud
+            ? "Items 使用 Google Sheets；未混入本機 Mock 資料。"
             : "資料僅存於此瀏覽器，清除網站資料會遺失紀錄。"}
           <ArrowUpRight size={13} />
         </span>
       </footer>
       {adding && (
         <Modal
-          error={error}
           title="新增生活事項"
-          close={() => !busy && setAdding(false)}
+          error={state.error}
+          close={() => !state.busy && setAdding(false)}
         >
           <ItemForm
-            busy={busy}
-            submit={async (i) => {
-              await mutate(() => mockApi.save(i));
+            cloud={cloud}
+            busy={state.busy}
+            disabled={!writable}
+            recover={
+              state.stale && state.status === "ready"
+                ? store.refresh
+                : undefined
+            }
+            submit={async (item) => {
+              const id = await store.create(item);
               setAdding(false);
-              location.hash = `/items/${i.id}`;
+              location.hash = `/items/${encodeURIComponent(id)}`;
             }}
           />
         </Modal>
       )}
-      {notice && (
-        <div className="toast" role="status">
-          ✓ {notice}
-        </div>
+      {switchingMock && (
+        <Modal
+          title="切換為本機 Mock 模式"
+          close={() => setSwitchingMock(false)}
+          error={state.error}
+        >
+          <p>
+            本機 Mock 與 Google Sheets
+            是不同資料來源。切換後只會操作此瀏覽器的本機資料；不會上傳、合併或刪除任何既有紀錄。
+          </p>
+          <div className="connection-actions">
+            <button
+              className="secondary"
+              onClick={() => setSwitchingMock(false)}
+            >
+              取消
+            </button>
+            <button
+              className="primary"
+              disabled={state.busy}
+              onClick={async () => {
+                await store.useMock();
+                if (store.getSnapshot().mode === "mock") {
+                  setSwitchingMock(false);
+                  location.hash = "/";
+                }
+              }}
+            >
+              確認切換至 Mock
+            </button>
+          </div>
+        </Modal>
       )}
     </>
   );

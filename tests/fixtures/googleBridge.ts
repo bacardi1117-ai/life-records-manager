@@ -27,6 +27,10 @@ export async function mockGoogleBridge(page: Page) {
     malformed: false,
     ready: true,
     loseWriteResponse: false,
+    failWrites: false,
+    failGet: false,
+    omitCreateId: false,
+    getDelay: {} as Record<string, number>,
   };
   await page.route("https://script.google.com/**", async (route) => {
     const token = new URL(route.request().url()).searchParams.get("token");
@@ -63,13 +67,30 @@ export async function mockGoogleBridge(page: Page) {
     const index = state.rows.findIndex(
       (row) => row.item_id === data.payload.item_id,
     );
+    if (
+      state.failWrites &&
+      ["createItem", "updateItem", "archiveItem", "restoreItem"].includes(
+        data.action,
+      )
+    ) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "模擬雲端寫入失敗" }),
+      });
+      return;
+    }
+    if (data.action === "getItem" && state.getDelay[data.payload.item_id])
+      await new Promise((resolve) =>
+        setTimeout(resolve, state.getDelay[data.payload.item_id]),
+      );
     switch (data.action) {
       case "getItems":
         if (state.failReads) error = "模擬後端讀取失敗";
         else result = state.malformed ? { items: state.rows } : state.rows;
         break;
       case "getItem":
-        if (index < 0) error = "找不到事項";
+        if (state.failGet) error = "模擬單筆讀取失敗";
+        else if (index < 0) error = "找不到事項";
         else result = state.rows[index];
         break;
       case "createItem":
@@ -78,7 +99,9 @@ export async function mockGoogleBridge(page: Page) {
           ...data.payload,
           item_id: "new-cloud-item",
         });
-        result = state.rows.at(-1);
+        result = state.omitCreateId
+          ? {}
+          : { item_id: state.rows.at(-1)!.item_id };
         break;
       case "updateItem":
         if (index < 0) error = "找不到事項";

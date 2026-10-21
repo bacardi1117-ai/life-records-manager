@@ -2,7 +2,7 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
-目前版本保留完整本機 Mock，並新增獨立 Google Sheets Items 橋接介面。雲端串接已通過模擬測試，實際 Google 登入與部署端呼叫尚待驗證；Google 日曆提醒仍為後續規劃。
+目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD，保養、歷史、備註與照片尚未支援雲端同步；Google 日曆提醒仍為後續規劃。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -79,7 +79,10 @@ src/
   components/Dashboard.tsx  首頁、搜尋與保養摘要
   components/Detail.tsx     詳情、子項目、歷史、備註與照片
   components/Forms.tsx      對話框與各項表單
-  App.tsx                   Hash 路由、載入與資料更新
+  api/itemsRepository.ts    共用資料介面、Sheets 轉換與差異更新
+  api/itemsStore.ts         單一資料來源狀態與連線生命週期
+  hooks/useItemsStore.ts     React 訂閱共用狀態
+  App.tsx                   共用首頁／詳細頁的 Hash 路由
   styles.css                響應式介面
 public/heater.svg            本機示範插圖
 tests/                      單元及手機／桌面瀏覽器測試
@@ -107,63 +110,78 @@ git push -u origin HEAD
 
 合併至 `main` 後會觸發部署。若目前就在 `main`，推送會直接觸發部署；請先確認分支與團隊流程。不要加入 `.env`、使用者照片、`node_modules/` 或 `dist/`。
 
-## Google Sheets Items 橋接整合
+## 統一首頁與詳細頁的資料來源
 
-### 在 GitHub Pages 設定自己的 Web App
+### 設定及模式選擇
 
-此功能須在本 PR 合併並完成 Pages 部署後才會出現在正式網站。
+本次變更須在 PR 合併並完成 GitHub Pages 部署後才會出現在正式網站。
 
-1. 開啟網站上方的「連線設定」（`#/settings`）。
-2. 貼上自己的 Apps Script Web App `/exec` URL，只接受 HTTPS、`script.google.com` 的 `/macros/s/<deployment-id>/exec` 路徑，不含查詢參數或片段。不要把實際 URL 寫進程式、README、Issue 或 PR。
-3. 維持部署權限「只有我自己」。必要時使用「在新分頁開啟 Web App」，登入部署所屬 Google 帳號；回到網站按「連線並儲存網址」。
-4. 前端在 iframe URL 附加每次新產生的 token。收到 `ready` 並成功解析 `getItems` 回傳陣列後才儲存網址，並顯示已連線。
-5. 進入「雲端 Items」（`#/cloud`）即可新增、查詢、修改、封存與還原。若後端清單排除封存紀錄，可用 item_id 查詢，是否能取得封存紀錄仍取決於已部署後端。
-6. 重新整理後保留網址，但不自動連線；按「連接已儲存的網址」重新建立 iframe。可中斷連線或移除網址，不影響本機 Mock 紀錄。
+1. 開啟「連線設定」（`#/settings`），貼上自己的 Apps Script `/exec` URL，按「連線並使用 Google Sheets」。不要將真實網址放進程式、README、Issue 或 PR。
+2. 維持 Apps Script「只有我自己」權限。必要時先在新分頁登入部署所屬 Google 帳號，再回來連線。網址須為 HTTPS、`script.google.com` 的 `/macros/s/<deployment-id>/exec`，不含查詢參數或片段。
+3. ready 握手及 getItems 成功後，首頁直接顯示雲端事項，點擊卡片即開啟原有詳細頁 `#/items/<item_id>`。不再需要進入獨立雲端清單；舊 `#/cloud` 入口也呈現同一套首頁。
+4. 介面持續顯示「Google Sheets 雲端模式」或「本機 Mock 模式」。成功連接 Google Sheets 會選用雲端模式。重新整理自動依所選來源載入；雲端錯誤只會停止寫入，絕不自動改用 Mock。
+5. 「切換為本機 Mock」會先顯示來源不同的提示，確認後才切換。Mock 選擇會被記住，即使仍保留有效雲端網址，也不會在重新整理後擅自換來源。
+6. 舊版本已有網址但尚未儲存模式時，優先選用雲端並重新連線。沒有網址或模式設定的新使用者可使用原本 Mock。若明確選擇雲端但網址遺失或無效，會顯示設定錯誤，不回退 Mock。
 
-網址以 `life-records-manager:apps-script-url:v1` 儲存在此瀏覽器 localStorage，與 `life-records-manager:v1` 的本機事項完全分離。隨機 token 只活在單次連線記憶體與 iframe URL，不寫入設定。雲端 Items 只保存在工作階段記憶體，不寫入本機 Mock，也不自動上傳示範資料。
+### 正式 Items 操作
 
-### 通訊協定與欄位
+- 首頁、詳細頁與統計均讀取相同來源的 Items。詳細頁開啟時以 item_id 呼叫 getItem，不沿用其他事項的快取。
+- 基本資料包含名稱、分類、事項日期、金額、品牌、型號、位置、保固日期及狀態。雲端首頁統計為事項數、事項總金額與已封存數；不將未支援的保養統計顯示成已同步。
+- 「編輯資料」以表單開啟時的資料為基準，只送出實際修改欄位的 `updateItem({item_id, changes})`。未更動的欄位不會覆寫後端同期變更；沒有修改時不呼叫 updateItem。
+- 寫入確認後以同一 item_id 重新呼叫 getItem，使用後端結果更新詳細頁、首頁卡片與統計。狀態變更使用既有 archiveItem/restoreItem。
+- 首頁新增呼叫 createItem，使用回傳物件的 item_id 開啟詳細頁，並重新讀取該筆資料；不使用前端產生的替代 ID，不建立 Mock 副本。
+- 雲端寫入失敗時保留表單內容、不顯示儲存成功，並停用雲端寫入。可按「重新讀取資料並保留草稿」核對後端狀態。寫入逾時可能已在後端完成，不能直接重複新增。
+- 已確認寫入、但後續單筆讀取失敗時，關閉已送出的表單，保留舊畫面並顯示「雲端寫入已確認，但重新讀取該筆資料失敗」，不假裝畫面已更新，也不重送寫入。
+- 不同 item_id 的回應會核對 ID；舊頁面、舊連線的延遲回應不得覆蓋目前選取的事項。
 
-參考 [keeping_accounts/app.js](https://github.com/bacardi1117-ai/keeping_accounts/blob/5c6184392665a466b46ba732d484daf3448bfb03/app.js) 與 [Bridge.html](https://github.com/bacardi1117-ai/keeping_accounts/blob/5c6184392665a466b46ba732d484daf3448bfb03/apps-script/Bridge.html)。沿用 iframe + postMessage、每次連線 UUID token、ready 握手與 request ID；未使用直接跨網域 fetch。
+### 尚未支援的功能與本機資料保護
+
+雲端只支援 Items CRUD。定期保養、歷史紀錄、備註、照片及本機購買安裝說明尚未有雲端 API。雲端詳細頁的相關分頁顯示「尚未支援雲端同步」，不顯示或儲存 Mock 子資料；資料層也會拒絕這些寫入。本次暫停保養功能開發，只保留既有 Mock 行為與回歸測試。
+
+- 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
+- Web App URL 使用 `life-records-manager:apps-script-url:v1`。
+- 資料來源選擇使用 `life-records-manager:data-source:v1`（cloud 或 mock）。
+- 雲端 Items 僅存在工作階段記憶體，不寫入 Mock localStorage。切換來源會清理畫面快取，但不刪除任何本機紀錄，也不自動上傳範例。
+- 移除雲端網址不等於切換 Mock；如果原本在 Mock 模式，移除網址也不影響本機操作。
+
+### 共用資料架構
+
+所有 React 畫面透過 `useItemsStore` 訂閱同一個 `ItemsStore`，並呼叫同一層操作。畫面元件不直接使用 Mock API 或讀寫 localStorage。
+
+- `src/api/itemsRepository.ts`：共用 ItemsRepository 介面、Sheets 欄位對應、差異欄位更新、寫入後讀取、Mock／雲端實作。雲端映射不與 Mock 依 ID 合併；未支援子資料固定為空且不可寫入。
+- `src/api/itemsStore.ts`：模式選擇、連線、來源內的清單及單筆快取、寫入狀態、失敗保護與延遲回應隔離。
+- `src/hooks/useItemsStore.ts`：React 狀態訂閱及生命週期。
+- `src/components/Dashboard.tsx`、`Detail.tsx`、`Forms.tsx`：同一套首頁／詳細頁／表單，依資料來源啟用支援的操作。
+- `src/api/connectionSettings.ts`：集中處理本機網址與資料來源設定。
+- 已移除舊 `SheetsItems.tsx` 與 `useSheetsConnection.ts`，避免出現兩套可獨立寫入的資料來源。
+
+### 橋接協定
+
+保留現有 iframe + postMessage Adapter；不直接跨網域 fetch，也不修改 Apps Script 後端。參考來源為 [keeping_accounts/app.js](https://github.com/bacardi1117-ai/keeping_accounts/blob/5c6184392665a466b46ba732d484daf3448bfb03/app.js) 與 [Bridge.html](https://github.com/bacardi1117-ai/keeping_accounts/blob/5c6184392665a466b46ba732d484daf3448bfb03/apps-script/Bridge.html)。
 
 | 前端 action | 後端橋接函式 | payload |
 | --- | --- | --- |
-| `getItems` | `bridgeGetItems` | `{}` |
-| `getItem` | `bridgeGetItem` | `{ item_id }` |
-| `createItem` | `bridgeCreateItem` | Items 可編輯基本欄位 |
-| `updateItem` | `bridgeUpdateItem` | `{ item_id, changes }` |
-| `archiveItem` | `bridgeArchiveItem` | `{ item_id }` |
-| `restoreItem` | `bridgeRestoreItem` | `{ item_id }` |
+| getItems | bridgeGetItems | {} |
+| getItem | bridgeGetItem | { item_id } |
+| createItem | bridgeCreateItem | Items 可編輯基本欄位 |
+| updateItem | bridgeUpdateItem | { item_id, changes }，changes 只含修改欄位 |
+| archiveItem | bridgeArchiveItem | { item_id } |
+| restoreItem | bridgeRestoreItem | { item_id } |
 
-共用封包欄位為 `channel: "life-records-v1"`、`token`、`type`。請求含 `id`、`action`、`payload`；回應為 `type: "response"`，含同一個 `id`、布林 `ok`，以及 `result` 或 `error`。
+共用封包為 channel `life-records-v1`、每次新連線的 UUID token、type；request 有 id/action/payload，response 有相同 id、布林 ok 與 result 或 error。getItems 直接回傳陣列；getItem 回傳單一 Items 物件。createItem 成功回傳物件必須含非空 item_id，若缺少則停止寫入並要求重新讀取核對，不製造替代紀錄。
 
-`getItems` 必須直接回傳陣列，不接受 `{items: [...]}`。`getItem` Adapter 預期直接回傳單一同型別物件；實際回傳需於部署驗證時確認。Items 欄位：
+DTO 使用 item_date、warranty_date、數值 amount、active/archived 狀態及字串 ID／時間戳。UI 的 date/model/warrantyDate/status 對應後端欄位；更新只允許 name、category、item_date、amount、brand、model、location、warranty_date。保固日期可為空字串。
 
-- `item_id`、`name`、`category`、`item_date`、`brand`、`model`、`location`、`warranty_date`、`created_at`、`updated_at` 為字串。
-- `amount` 為非負有限數值，`status` 為 `active` 或 `archived`。
-- `item_date` 為 YYYY-MM-DD；`warranty_date` 可為空字串或 YYYY-MM-DD。
-- 新增與修改只送出 `name/category/item_date/amount/brand/model/location/warranty_date`。ID、狀態與時間戳由後端處理；不送出本機保養、歷史、備註或圖片欄位。
+### 安全與真實連線限制
 
-**已知部署端問題：**使用者指出目前 Bridge.html 的 ACTIONS 對照呼叫仍有待修正／驗證，由另行提供的後端修正版處理。本 PR 只使用左側 action 名稱，不修改或部署任何 Apps Script 程式，不宣稱目前部署版本一定能呼叫成功。
+HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 token 的 ready 訊息固定來源視窗，後續核對 channel、token、source、origin 及 request ID。這些是通訊關聯機制，**不是使用者身分驗證，不能保護匿名公開的寫入 API**。維持「只有我自己」部署設定。
 
-### 來源檢查與實際 iframe 限制
+使用者已回報既有後端 Items 可新增、查詢及修改；本次不變更後端。本次測試使用合成 URL／資料與攔截網路的模擬 iframe，不代表重新驗證了真實 Google 登入或試算表。Google 登入頁禁止嵌入、第三方 Cookie、跨網站限制與後端允許來源仍可能影響實際使用；錯誤會保留在雲端模式顯示。
 
-- HtmlService 有內層 iframe。Adapter 由合法 Google origin 加上當次 token 的 ready 訊息取得來源視窗，再固定該視窗與 exact origin；後續 response 必須同時符合 channel、token、source、origin、id 與布林 ok。
-- 請求只送往固定來源，未使用 `*` 發送資料。重複 ready 不會替換已固定的視窗。取消、重新連線與卸載會移除 iframe、監聽器、計時器並拒絕未完成請求。
-- **origin/source 檢查與隨機 token 是通訊關聯機制，不是使用者身分驗證。它們不能保護匿名公開的寫入 API。**此實作不要求將部署改成「任何人」。
-- Google 登入頁的嵌入政策、第三方 Cookie、跨網站登入狀態、Google HtmlService frame 政策及後端允許的前端 origin，均可能讓「只有我自己」部署無法在 GitHub Pages iframe 中使用。新分頁可以登入，不代表 iframe 就一定可以工作。
-- 真實驗證須在擁有部署權限的帳號、正式 Pages origin、實際瀏覽器中進行：先確認新分頁可用，再確認 ready、getItems 讀取及非敏感測試事項的完整操作。後端允許來源需與正式網站 origin 一致（origin 不含路徑）；本次未更改後端允許來源。
-- ready 逾時不會顯示連線成功。寫入逾時可能代表後端已執行，前端不會自動重送；先重新讀取核對。寫入成功但重新讀取失敗時，會關閉已送出的表單並提示重新讀取，避免重複新增。
-- 失敗時保留本機資料及上次成功讀取的雲端畫面，標為未確認最新狀態，重新讀取成功前停用寫入。未提供跨裝置同步本機資料的功能。
+### 測試
 
-### 新增程式與測試
+執行 `npm test`、`npm run build`，再執行 `npm run test:e2e`（本雲端環境加上 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium`）。測試使用不存在的合成 deployment ID，不含真實 URL、Token 或私人生活資料。
 
-- `src/api/appsScriptBridge.ts`：iframe transport、握手、來源固定、request correlation、逾時與 dispose。
-- `src/api/connectionSettings.ts`：本機 URL 設定，與 Mock 儲存隔離。
-- `src/api/sheetsItems.ts`：Items DTO、欄位驗證及 action／payload 對應。
-- `src/hooks/useSheetsConnection.ts`：連線生命週期、資料狀態、取消及失敗保護。
-- `src/components/ConnectionSettings.tsx`、`SheetsItems.tsx`：設定與雲端 Items 操作介面。
-- `tests/bridge.test.ts`、`connectionSettings.test.ts`、`sheetsItems.test.ts`：協定、生命週期、設定隔離、欄位與動作測試。
-- `tests/e2e/bridge.spec.ts`、`tests/fixtures/googleBridge.ts`：以 Playwright 攔截全部 Google 測試網址，模擬 Google 外層與內層 iframe；測試檔使用不存在的合成 deployment ID，不含真實 Web App URL。
-
-新增測試需要開發相依 `jsdom`；使用 `npm ci` 安裝。執行 `npm test`、`npm run build`，再執行 `npm run test:e2e`（本雲端環境加上 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium`）。這些測試驗證前端及模擬協定，**不驗證真實 Google 登入、Sheet 寫入或部署端 ACTIONS 修正**。
+- 共用 repository：欄位映射、只更新差異、後端 ID、寫入後讀取、錯誤結果、未支援操作保護。
+- 共用 store：來源優先順序、手動 Mock 選擇持久化、失敗不回退、延遲回應隔離、本機資料保護。
+- Playwright 桌面／手機：首頁至詳細頁一致、修改金額與日期、重新整理、只更新指定 ID、新增無 Mock 副本、保留失敗草稿、確認切換模式、停止未支援同步操作，以及既有 Mock 功能回歸。
