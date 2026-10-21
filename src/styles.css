@@ -1365,3 +1365,21 @@ textarea {
     flex-basis: 100%;
   }
 }
+.source-toolbar {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 22px;
+  padding: 14px 18px;
+  background: #eaf0e4;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.source-toolbar > span {
+  flex: 1;
+  min-width: 180px;
+}
+.stats strong {
+  overflow-wrap: anywhere;
+}

@@ -13,10 +13,18 @@
 
 ## Apps Script Items 整合規範
 
-- Google Sheets Items 使用獨立 Adapter、DTO、狀態與頁面。原有 LifeItem／Mock API 不可當成已同步雲端資料；禁止自動上傳示範資料。
+- 首頁與詳細頁共用 ItemsStore／ItemsRepository，禁止另建獨立雲端清單或讓元件直接操作 Mock API／localStorage。雲端映射不得混入本機子資料；禁止自動上傳示範資料。
 - 透過 iframe + postMessage，禁止以 fetch 直接呼叫 Apps Script。前端 action 使用 getItems/getItem/createItem/updateItem/archiveItem/restoreItem，而非 bridge 函式名稱。
 - getItems 嚴格解析直接陣列，日期欄位為 item_date；status 使用 active/archived。只傳送明確允許的基本欄位，禁止把本機歷史、圖片等附帶上傳。
-- 保持「只有我自己」部署權限；本工作範圍不修改 Apps Script。實際 iframe 登入、跨網站限制與後端 ACTIONS 呼叫問題必須另行驗證。
+- 保持「只有我自己」部署權限；本工作範圍不修改 Apps Script。實際 iframe 登入與跨網站限制須另外驗證，不能用模擬測試宣稱真實 Google 連線已驗證。
 - token 與來源檢查不是使用者驗證，不得宣稱能保護匿名公開 API。
 - 不提交實際部署 URL、憑證、登入狀態或私人 Items。測試只能使用合成 ID、假資料並攔截全部 Google 網路請求。
 - 網路失敗保留既有本機資料；未知寫入結果不得自動重試，需先讀取核對。已確認寫入成功後的讀取失敗不可再呈現成可重送的新增表單。
+
+## 統一資料來源與更新
+
+- 選擇 cloud 後，連線失敗必須停止寫入，不自動回退 Mock。重新整理保留使用者選擇；切換 Mock 前顯示不同來源的確認。
+- 雲端 updateItem 的 changes 只含相對於編輯初始資料的實際變更欄位；不要把整個 LifeItem 送入後端。更新成功後以原 item_id 重新 getItem。
+- 新增必須採用後端回傳 item_id；不得自建替代 ID 或 Mock 副本。跨 ID／舊連線的回應不可覆蓋目前資料。
+- 雲端保養、歷史、備註、照片顯示「尚未支援雲端同步」並停用寫入；本次暫停保養功能開發。
+- 不修改既有 localStorage 資料格式或自動遷移紀錄。切換來源只清理畫面快取；共用型別新增欄位需相容舊 Mock 資料。

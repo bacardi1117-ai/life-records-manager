@@ -29,6 +29,9 @@ export interface LifeItem {
   date: string;
   category: string;
   brand: string;
+  model?: string;
+  warrantyDate?: string;
+  status?: "active" | "archived";
   location: string;
   amount: number;
   description: string;
@@ -41,3 +44,5 @@ export interface StoreData {
   version: 1;
   items: LifeItem[];
 }
+
+export type DataSource = "mock" | "cloud";

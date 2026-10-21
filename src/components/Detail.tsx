@@ -41,7 +41,17 @@ export default function Detail({
   complete,
   busy,
   error,
+  cloud = false,
+  readOnly = false,
+  update,
+  setArchived,
+  recover,
 }: {
+  cloud?: boolean;
+  readOnly?: boolean;
+  update: (item: LifeItem, original: LifeItem) => Promise<void>;
+  setArchived: (archived: boolean) => Promise<void>;
+  recover?: () => Promise<void>;
   error: string;
   item: LifeItem;
   save: (i: LifeItem) => Promise<void>;
@@ -84,7 +94,11 @@ export default function Detail({
             {item.location || "尚未設定地點"}
           </span>
         </div>
-        <button className="secondary" onClick={() => setModal("edit")}>
+        <button
+          className="secondary"
+          disabled={readOnly}
+          onClick={() => setModal("edit")}
+        >
           <Edit3 size={16} />
           編輯資料
         </button>
@@ -100,17 +114,44 @@ export default function Detail({
             <dd>{item.date}</dd>
             <dt>購入及安裝金額</dt>
             <dd className="large-money">{money(item.amount)}</dd>
-            <dt>累計保養支出</dt>
-            <dd>{money(item.history.reduce((a, r) => a + r.amount, 0))}</dd>
-            <dt>購買及安裝資料</dt>
-            <dd className="description">{item.description || "尚未填寫"}</dd>
+            <dt>品牌</dt>
+            <dd>{item.brand || "未填寫"}</dd>
+            <dt>型號</dt>
+            <dd>{item.model || "未填寫"}</dd>
+            <dt>位置</dt>
+            <dd>{item.location || "未填寫"}</dd>
+            <dt>保固日期</dt>
+            <dd>{item.warrantyDate || "未填寫"}</dd>
+            <dt>狀態</dt>
+            <dd>{item.status === "archived" ? "已封存" : "使用中"}</dd>
+            {!cloud && (
+              <>
+                <dt>累計保養支出</dt>
+                <dd>{money(item.history.reduce((a, r) => a + r.amount, 0))}</dd>
+                <dt>購買及安裝資料</dt>
+                <dd className="description">
+                  {item.description || "尚未填寫"}
+                </dd>
+              </>
+            )}
           </dl>
           <div className="local-note">
             <ShieldIcon />
-            資料保存在此瀏覽器
-            <br />
-            目前為第一階段 Mock 模式
+            {cloud
+              ? "Google Sheets 雲端模式 · Items"
+              : "本機 Mock 模式 · 資料保存在此瀏覽器"}
           </div>
+          {cloud && (
+            <button
+              className="secondary"
+              disabled={readOnly}
+              onClick={() =>
+                void setArchived(item.status !== "archived").catch(() => {})
+              }
+            >
+              {item.status === "archived" ? "還原事項" : "封存事項"}
+            </button>
+          )}
         </aside>
         <section className="detail-content">
           <div className="tabs" role="tablist" aria-label="事項內容">
@@ -123,183 +164,203 @@ export default function Detail({
               >
                 {t}
                 <span>
-                  {t === "定期子項目"
-                    ? item.tasks.length
-                    : t === "歷史紀錄"
-                      ? item.history.length
-                      : t === "備註"
-                        ? item.notes.length
-                        : item.photos.length}
+                  {cloud
+                    ? "未同步"
+                    : t === "定期子項目"
+                      ? item.tasks.length
+                      : t === "歷史紀錄"
+                        ? item.history.length
+                        : t === "備註"
+                          ? item.notes.length
+                          : item.photos.length}
                 </span>
               </button>
             ))}
           </div>
           <div className="panel tab-panel" role="tabpanel" aria-label={tab}>
-            {tab === "定期子項目" && (
+            {cloud ? (
+              <div className="empty">
+                <h2>{tab}尚未支援雲端同步</h2>
+                <p>
+                  目前雲端僅支援 Items 基本資料，此處不會讀取或寫入本機 Mock
+                  紀錄。
+                </p>
+              </div>
+            ) : (
               <>
-                <div className="section-heading">
-                  <div>
-                    <h2>定期照顧，安心生活</h2>
-                    <p className="muted small">
-                      完成後，自動從實際日期重新計算。
-                    </p>
-                  </div>
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setSelected(undefined);
-                      setModal("task");
-                    }}
-                  >
-                    <Plus size={16} />
-                    新增子項目
-                  </button>
-                </div>
-                {item.tasks.map((task) => {
-                  const due = nextDue(item, task);
-                  return (
-                    <div className="task-row" key={task.id}>
-                      <span
-                        className={`task-icon ${daysUntil(due) < 0 ? "amber" : ""}`}
-                      >
-                        <Repeat2 size={20} />
-                      </span>
-                      <div className="task-info">
-                        <h3>{task.name}</h3>
-                        <p>
-                          每 {task.intervalDays} 天 <span>·</span> 下次 {due}
+                {tab === "定期子項目" && (
+                  <>
+                    <div className="section-heading">
+                      <div>
+                        <h2>定期照顧，安心生活</h2>
+                        <p className="muted small">
+                          完成後，自動從實際日期重新計算。
                         </p>
-                        <span
-                          className={`status ${daysUntil(due) < 0 ? "overdue" : ""}`}
-                        >
-                          {dueLabel(due)}
-                        </span>
                       </div>
-                      <div className="task-actions">
-                        <button
-                          className="icon-button"
-                          aria-label={`編輯${task.name}`}
-                          onClick={() => {
-                            setSelected(task);
-                            setModal("task");
-                          }}
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button
-                          className="secondary"
-                          onClick={() => {
-                            setSelected(task);
-                            setModal("complete");
-                          }}
-                        >
-                          <Check size={16} />
-                          完成保養
-                        </button>
-                      </div>
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setSelected(undefined);
+                          setModal("task");
+                        }}
+                      >
+                        <Plus size={16} />
+                        新增子項目
+                      </button>
                     </div>
-                  );
-                })}
-                {!item.tasks.length && (
-                  <p className="empty">
-                    還沒有定期子項目，新增一個保養計畫吧。
-                  </p>
-                )}
-              </>
-            )}
-            {tab === "歷史紀錄" && (
-              <>
-                <div className="section-heading">
-                  <h2>每一次照顧，都有記錄</h2>
-                  <Clock3 size={19} />
-                </div>
-                <div className="timeline">
-                  {[...item.history]
-                    .sort((a, b) => b.date.localeCompare(a.date))
-                    .map((r) => (
-                      <article key={r.id}>
-                        <div className="record-top">
-                          <span>{r.date}</span>
-                          <strong>{money(r.amount)}</strong>
+                    {item.tasks.map((task) => {
+                      const due = nextDue(item, task);
+                      return (
+                        <div className="task-row" key={task.id}>
+                          <span
+                            className={`task-icon ${daysUntil(due) < 0 ? "amber" : ""}`}
+                          >
+                            <Repeat2 size={20} />
+                          </span>
+                          <div className="task-info">
+                            <h3>{task.name}</h3>
+                            <p>
+                              每 {task.intervalDays} 天 <span>·</span> 下次{" "}
+                              {due}
+                            </p>
+                            <span
+                              className={`status ${daysUntil(due) < 0 ? "overdue" : ""}`}
+                            >
+                              {dueLabel(due)}
+                            </span>
+                          </div>
+                          <div className="task-actions">
+                            <button
+                              className="icon-button"
+                              aria-label={`編輯${task.name}`}
+                              onClick={() => {
+                                setSelected(task);
+                                setModal("task");
+                              }}
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                            <button
+                              className="secondary"
+                              onClick={() => {
+                                setSelected(task);
+                                setModal("complete");
+                              }}
+                            >
+                              <Check size={16} />
+                              完成保養
+                            </button>
+                          </div>
                         </div>
-                        <h3>{r.taskName}</h3>
-                        <p>{r.note || "無備註"}</p>
-                        <Gallery photos={r.photos} />
+                      );
+                    })}
+                    {!item.tasks.length && (
+                      <p className="empty">
+                        還沒有定期子項目，新增一個保養計畫吧。
+                      </p>
+                    )}
+                  </>
+                )}
+                {tab === "歷史紀錄" && (
+                  <>
+                    <div className="section-heading">
+                      <h2>每一次照顧，都有記錄</h2>
+                      <Clock3 size={19} />
+                    </div>
+                    <div className="timeline">
+                      {[...item.history]
+                        .sort((a, b) => b.date.localeCompare(a.date))
+                        .map((r) => (
+                          <article key={r.id}>
+                            <div className="record-top">
+                              <span>{r.date}</span>
+                              <strong>{money(r.amount)}</strong>
+                            </div>
+                            <h3>{r.taskName}</h3>
+                            <p>{r.note || "無備註"}</p>
+                            <Gallery photos={r.photos} />
+                          </article>
+                        ))}
+                    </div>
+                    {!item.history.length && (
+                      <p className="empty">
+                        完成第一次保養後，紀錄會出現在這裡。
+                      </p>
+                    )}
+                  </>
+                )}
+                {tab === "備註" && (
+                  <>
+                    <h2>生活筆記</h2>
+                    <form
+                      className="note-form"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        try {
+                          await save({
+                            ...item,
+                            notes: [
+                              ...item.notes,
+                              {
+                                id: crypto.randomUUID(),
+                                date: today(),
+                                text: note.trim(),
+                              },
+                            ],
+                          });
+                          setNote("");
+                        } catch {
+                          /* API error is shown without clearing the note. */
+                        }
+                      }}
+                    >
+                      <textarea
+                        aria-label="新增備註"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                        placeholder="補充保固資訊、師傅的叮嚀，或下次要注意的事…"
+                        rows={3}
+                        maxLength={3000}
+                        required
+                      />
+                      <button
+                        className="primary"
+                        disabled={busy || !note.trim()}
+                      >
+                        <Plus size={16} />
+                        新增備註
+                      </button>
+                    </form>
+                    {[...item.notes].reverse().map((n) => (
+                      <article className="note" key={n.id}>
+                        <time>{n.date}</time>
+                        <p>{n.text}</p>
                       </article>
                     ))}
-                </div>
-                {!item.history.length && (
-                  <p className="empty">完成第一次保養後，紀錄會出現在這裡。</p>
+                  </>
                 )}
-              </>
-            )}
-            {tab === "備註" && (
-              <>
-                <h2>生活筆記</h2>
-                <form
-                  className="note-form"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    try {
-                      await save({
-                        ...item,
-                        notes: [
-                          ...item.notes,
-                          {
-                            id: crypto.randomUUID(),
-                            date: today(),
-                            text: note.trim(),
-                          },
-                        ],
-                      });
-                      setNote("");
-                    } catch {
-                      /* API error is shown without clearing the note. */
-                    }
-                  }}
-                >
-                  <textarea
-                    aria-label="新增備註"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="補充保固資訊、師傅的叮嚀，或下次要注意的事…"
-                    rows={3}
-                    maxLength={3000}
-                    required
-                  />
-                  <button className="primary" disabled={busy || !note.trim()}>
-                    <Plus size={16} />
-                    新增備註
-                  </button>
-                </form>
-                {[...item.notes].reverse().map((n) => (
-                  <article className="note" key={n.id}>
-                    <time>{n.date}</time>
-                    <p>{n.text}</p>
-                  </article>
-                ))}
-              </>
-            )}
-            {tab === "照片" && (
-              <>
-                <div className="section-heading">
-                  <h2>照片與憑證</h2>
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setPhotos([]);
-                      setModal("photos");
-                    }}
-                  >
-                    <Plus size={16} />
-                    新增照片
-                  </button>
-                </div>
-                <Gallery photos={item.photos} />
-                {!item.photos.length && (
-                  <p className="empty">
-                    留下設備照片與購買憑證，日後更容易查找。
-                  </p>
+                {tab === "照片" && (
+                  <>
+                    <div className="section-heading">
+                      <h2>照片與憑證</h2>
+                      <button
+                        className="text-button"
+                        onClick={() => {
+                          setPhotos([]);
+                          setModal("photos");
+                        }}
+                      >
+                        <Plus size={16} />
+                        新增照片
+                      </button>
+                    </div>
+                    <Gallery photos={item.photos} />
+                    {!item.photos.length && (
+                      <p className="empty">
+                        留下設備照片與購買憑證，日後更容易查找。
+                      </p>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -323,7 +384,17 @@ export default function Detail({
           close={() => !busy && setModal(null)}
         >
           {modal === "edit" && (
-            <ItemForm item={item} busy={busy} submit={saveAndClose} />
+            <ItemForm
+              item={item}
+              cloud={cloud}
+              busy={busy}
+              disabled={readOnly}
+              recover={recover}
+              submit={async (value, original) => {
+                await update(value, original!);
+                setModal(null);
+              }}
+            />
           )}{" "}
           {modal === "task" && (
             <TaskForm

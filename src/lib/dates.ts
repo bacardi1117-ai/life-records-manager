@@ -46,5 +46,6 @@ export const money = (value: number) =>
   new Intl.NumberFormat("zh-TW", {
     style: "currency",
     currency: "TWD",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);

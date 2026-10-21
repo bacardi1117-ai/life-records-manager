@@ -66,21 +66,38 @@ export function parseItems(value: unknown): SheetsItem[] {
     throw new Error("Items 回傳重複 item_id，請核對後端資料");
   return items;
 }
-function changes(value: ItemChanges): ItemChanges {
-  const fields = {
-    name: value.name.trim(),
-    category: value.category.trim(),
-    item_date: value.item_date,
-    amount: value.amount,
-    brand: value.brand.trim(),
-    model: value.model.trim(),
-    location: value.location.trim(),
-    warranty_date: value.warranty_date,
-  };
-  if (!fields.name || !fields.category) throw new Error("請填寫名稱與分類");
-  if (!Number.isFinite(fields.amount) || fields.amount < 0)
-    throw new Error("金額須為零或正數");
-  parseDate(fields.item_date);
+export function changes(value: Partial<ItemChanges>): Partial<ItemChanges> {
+  const fields: Partial<ItemChanges> = {};
+  for (const key of [
+    "name",
+    "category",
+    "item_date",
+    "brand",
+    "model",
+    "location",
+    "warranty_date",
+  ] as const) {
+    if (key in value) {
+      if (typeof value[key] !== "string")
+        throw new Error("Items 欄位型別不正確");
+      fields[key] = value[key]!.trim();
+    }
+  }
+  if (
+    ("name" in fields && !fields.name) ||
+    ("category" in fields && !fields.category)
+  )
+    throw new Error("請填寫名稱與分類");
+  if ("amount" in value) {
+    if (
+      typeof value.amount !== "number" ||
+      !Number.isFinite(value.amount) ||
+      value.amount < 0
+    )
+      throw new Error("金額須為零或正數");
+    fields.amount = value.amount;
+  }
+  if (fields.item_date !== undefined) parseDate(fields.item_date);
   if (fields.warranty_date) parseDate(fields.warranty_date);
   return fields;
 }
@@ -92,12 +109,15 @@ export function createSheetsItemsApi(
       return parseItems(await bridge.request("getItems"));
     },
     async get(item_id: string) {
-      return parseItem(await bridge.request("getItem", { item_id }));
+      const item = parseItem(await bridge.request("getItem", { item_id }));
+      if (item.item_id !== item_id)
+        throw new Error("後端回傳的 item_id 不符，拒絕覆蓋其他事項");
+      return item;
     },
     create(payload: ItemChanges) {
       return bridge.request("createItem", changes(payload));
     },
-    update(item_id: string, payload: ItemChanges) {
+    update(item_id: string, payload: Partial<ItemChanges>) {
       return bridge.request("updateItem", {
         item_id,
         changes: changes(payload),
