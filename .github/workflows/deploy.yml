@@ -24,6 +24,7 @@ jobs:
       - run: npm run build
         env:
           VITE_CALENDAR_SYNC_STATUS_API_ENABLED: "true"
+          VITE_NOTES_API_ENABLED: "true"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

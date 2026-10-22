@@ -1,5 +1,6 @@
 import type { MaintenancePlan } from "../../src/api/maintenancePlans";
 import type { CloudMaintenanceRecord } from "../../src/api/maintenanceRecords";
+import type { CloudNote } from "../../src/api/cloudNotes";
 import type { CalendarSyncStatus } from "../../src/api/calendarSync";
 import type { Page } from "@playwright/test";
 // Synthetic deployment; every request is fulfilled by Playwright, never Google.
@@ -54,6 +55,9 @@ export async function mockGoogleBridge(page: Page) {
     rows: [structuredClone(sampleItem)],
     plans: [structuredClone(samplePlan)],
     records: [] as CloudMaintenanceRecord[],
+    notes: [] as CloudNote[],
+    failNoteWrites: false,
+    failNoteReads: false,
     calendarStatuses: {} as Record<string, CalendarSyncStatus>,
     failCalendarRead: false,
     calendarDelay: {} as Record<string, number>,
@@ -177,6 +181,43 @@ export async function mockGoogleBridge(page: Page) {
         setTimeout(resolve, state.planDelay[data.payload.item_id]),
       );
     switch (data.action) {
+      case "getNotes":
+        if (state.failNoteReads) error = "模擬備註讀取失敗";
+        else result = state.notes.filter(note => note.owner_type === data.payload.owner_type && note.owner_id === data.payload.owner_id);
+        break;
+      case "getNote":
+        if (state.failNoteReads) error = "模擬備註讀取失敗";
+        else result = state.notes.find(note => note.note_id === data.payload.note_id) ?? null;
+        break;
+      case "createNote": {
+        if (state.failNoteWrites) error = "模擬備註寫入失敗";
+        else {
+          const exists = state.notes.find(note => note.note_id === data.payload.note_id);
+          if (exists && (exists.owner_type !== data.payload.owner_type || exists.owner_id !== data.payload.owner_id ||
+              exists.title !== data.payload.title || exists.content !== data.payload.content))
+            error = "備註識別碼資料衝突";
+          else {
+            const note: CloudNote = exists ?? {
+              note_id: data.payload.note_id, owner_type: data.payload.owner_type, owner_id: data.payload.owner_id,
+              title: data.payload.title, content: data.payload.content,
+              created_at: "2026-10-22 12:00:00", updated_at: "2026-10-22 12:00:00",
+            };
+            if (!exists) state.notes.push(note);
+            result = { success: true, duplicate: Boolean(exists), note };
+          }
+        }
+        break;
+      }
+      case "updateNote": {
+        const note = state.notes.find(row => row.note_id === data.payload.note_id);
+        if (state.failNoteWrites) error = "模擬備註寫入失敗";
+        else if (!note) error = "找不到備註";
+        else {
+          Object.assign(note, data.payload.changes);
+          result = { success: true, note };
+        }
+        break;
+      }
       case "getCalendarSyncStatus":
         if (state.calendarDelay[data.payload.plan_id])
           await new Promise((resolve) =>

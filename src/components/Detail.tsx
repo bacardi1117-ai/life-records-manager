@@ -23,7 +23,9 @@ import type {
   CalendarSyncSnapshot,
   PlansSnapshot,
   RecordsSnapshot,
+  NotesSnapshot,
 } from "../api/itemsStore";
+import CloudNotes from "./CloudNotes";
 import { totalMaintenanceAmount } from "../api/maintenanceRecords";
 import { CloudHistoryList } from "./CloudMaintenanceRecords";
 function Gallery({ photos }: { photos: Photo[] }) {
@@ -50,6 +52,7 @@ export default function Detail({
   plans,
   records,
   calendarSync,
+  notes,
   save,
   complete,
   busy,
@@ -64,6 +67,7 @@ export default function Detail({
   plans: PlansSnapshot;
   records: RecordsSnapshot;
   calendarSync: CalendarSyncSnapshot;
+  notes: NotesSnapshot;
   cloud?: boolean;
   readOnly?: boolean;
   update: (item: LifeItem, original: LifeItem) => Promise<void>;
@@ -207,7 +211,7 @@ export default function Detail({
                           records.status === "ready"
                           ? records.rows.length
                           : "雲端"
-                        : "未同步"
+                        : t === "備註" ? notes.status === "unavailable" ? "未連接" : "雲端" : "未同步"
                     : t === "定期子項目"
                       ? item.tasks.length
                       : t === "歷史紀錄"
@@ -227,6 +231,7 @@ export default function Detail({
                 state={plans}
                 records={records}
                 calendarSync={calendarSync}
+                notes={notes}
                 busy={busy}
                 readOnly={readOnly}
               />
@@ -256,6 +261,15 @@ export default function Detail({
                   完成紀錄目前只提供新增及查詢，無法刪除或更正。
                 </p>
               </>
+            ) : cloud && tab === "備註" ? (
+              <CloudNotes
+                ownerType="item"
+                ownerId={item.id}
+                store={store}
+                state={notes}
+                busy={busy}
+                readOnly={readOnly}
+              />
             ) : cloud ? (
               <div className="empty">
                 <h2>{tab}尚未支援雲端同步</h2>

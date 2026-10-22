@@ -3,6 +3,7 @@ import { Edit3, Plus, Repeat2 } from "lucide-react";
 import type { LifeItem } from "../models";
 import type {
   CalendarSyncSnapshot,
+  NotesSnapshot,
   ItemsStore,
   PlansSnapshot,
 } from "../api/itemsStore";
@@ -14,6 +15,7 @@ import { Modal } from "./Forms";
 import { CloudHistoryList, CompletionForm } from "./CloudMaintenanceRecords";
 import type { RecordsSnapshot } from "../api/itemsStore";
 import CalendarSyncStatus from "./CalendarSyncStatus";
+import CloudNotes from "./CloudNotes";
 
 const units = { day: "天", month: "月", year: "年" };
 export default function CloudMaintenancePlans({
@@ -22,6 +24,7 @@ export default function CloudMaintenancePlans({
   state,
   records,
   calendarSync,
+  notes,
   busy,
   readOnly,
 }: {
@@ -30,12 +33,14 @@ export default function CloudMaintenancePlans({
   state: PlansSnapshot;
   records: RecordsSnapshot;
   calendarSync: CalendarSyncSnapshot;
+  notes: NotesSnapshot;
   busy: boolean;
   readOnly: boolean;
 }) {
   const [editing, setEditing] = useState<MaintenancePlan | "new" | null>(null);
   const [completing, setCompleting] = useState<MaintenancePlan | null>(null);
   const [viewingPlan, setViewingPlan] = useState<string | null>(null);
+  const [viewingNotes, setViewingNotes] = useState<string | null>(null);
   useEffect(() => {
     if (!busy && state.status === "idle") void store.loadPlans(item.id);
   }, [store, item.id, busy, state.status]);
@@ -124,6 +129,10 @@ export default function CloudMaintenancePlans({
               >
                 完成保養
               </button>
+              <button className="text-button" disabled={disabled} onClick={() =>
+                setViewingNotes(viewingNotes === plan.plan_id ? null : plan.plan_id)}>
+                {viewingNotes === plan.plan_id ? "收合備註" : "查看備註"}
+              </button>
               <button
                 className="text-button"
                 onClick={() => {
@@ -142,6 +151,10 @@ export default function CloudMaintenancePlans({
               snapshot={calendarSync}
               planState={state.status}
             />
+            {viewingNotes === plan.plan_id && <div className="plan-history">
+              <CloudNotes key={plan.plan_id} ownerType="plan" ownerId={plan.plan_id}
+                store={store} state={notes} busy={busy} readOnly={readOnly} />
+            </div>}
             {viewingPlan === plan.plan_id && (
               <div className="plan-history">
                 <CloudHistoryList
@@ -188,7 +201,7 @@ export default function CloudMaintenancePlans({
         {calendarSync.enabled
           ? "網站僅讀取同步狀態，不提供日曆寫入或手動同步。"
           : "網站目前尚未連接同步狀態唯讀 API。"}
-        Google Drive 照片及獨立備註仍未支援雲端同步。
+        Google Drive 照片仍未支援雲端同步。
       </p>
       {completing && (
         <Modal title="完成保養" close={() => !busy && setCompleting(null)}>

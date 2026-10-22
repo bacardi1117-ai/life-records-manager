@@ -20,6 +20,30 @@ import type {
 } from "./maintenanceRecords";
 import { recordDrafts } from "./recordDrafts";
 import type { RecordDraft } from "./recordDrafts";
+import { createCloudNotesRepository, NOTES_API_ENABLED } from "./cloudNotes";
+import type {
+  CloudNote,
+  CloudNotesRepository,
+  NewCloudNote,
+  NoteOwnerType,
+} from "./cloudNotes";
+import { noteDrafts } from "./noteDrafts";
+export interface NotesSnapshot {
+  ownerType: NoteOwnerType | null;
+  ownerId: string | null;
+  status: "unavailable" | "idle" | "loading" | "ready" | "error";
+  rows: CloudNote[];
+  error: string;
+  notice: string;
+}
+const emptyNotes = (enabled: boolean): NotesSnapshot => ({
+  ownerType: null,
+  ownerId: null,
+  status: enabled ? "idle" : "unavailable",
+  rows: [],
+  error: "",
+  notice: "",
+});
 import {
   CALENDAR_SYNC_STATUS_API_ENABLED,
   createCalendarSyncRepository,
@@ -81,6 +105,7 @@ const emptyPlans = (): PlansSnapshot => ({
   notice: "",
 });
 interface Snapshot {
+  notes: NotesSnapshot;
   plans: PlansSnapshot;
   records: RecordsSnapshot;
   calendarSync: CalendarSyncSnapshot;
@@ -99,6 +124,7 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : "資料操作失敗";
 export class ItemsStore {
   private state: Snapshot = {
+    notes: emptyNotes(NOTES_API_ENABLED),
     plans: emptyPlans(),
     records: emptyRecords(),
     calendarSync: emptyCalendarSync(CALENDAR_SYNC_STATUS_API_ENABLED),
@@ -119,6 +145,8 @@ export class ItemsStore {
   private plansRepository: MaintenancePlansRepository | null = null;
   private recordsRepository: MaintenanceRecordsRepository | null = null;
   private calendarRepository: CalendarSyncRepository | null = null;
+  private notesRepository: CloudNotesRepository | null = null;
+  private notesRequest = 0;
   private planRequest = 0;
   private recordRequest = 0;
   private planHistoryRequest = 0;
@@ -128,11 +156,15 @@ export class ItemsStore {
   private detailId: string | null = null;
   constructor(
     private host: () => HTMLElement | null,
-    options: { calendarSyncStatusApiEnabled?: boolean } = {},
+    options: {
+      calendarSyncStatusApiEnabled?: boolean;
+      notesApiEnabled?: boolean;
+    } = {},
   ) {
     this.state.calendarSync = emptyCalendarSync(
       options.calendarSyncStatusApiEnabled ?? CALENDAR_SYNC_STATUS_API_ENABLED,
     );
+    this.state.notes = emptyNotes(options.notesApiEnabled ?? NOTES_API_ENABLED);
   }
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
@@ -152,6 +184,8 @@ export class ItemsStore {
     this.plansRepository = null;
     this.recordsRepository = null;
     this.calendarRepository = null;
+    this.notesRepository = null;
+    this.notesRequest++;
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
@@ -161,6 +195,7 @@ export class ItemsStore {
       plans: emptyPlans(),
       records: emptyRecords(),
       calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+      notes: emptyNotes(this.state.notes.status !== "unavailable"),
       mode,
       status,
       items: [],
@@ -223,6 +258,10 @@ export class ItemsStore {
         bridge,
         this.state.calendarSync.enabled,
       );
+      this.notesRepository = createCloudNotesRepository(
+        bridge,
+        this.state.notes.status !== "unavailable",
+      );
       this.emit({
         items,
         status: "ready",
@@ -237,6 +276,8 @@ export class ItemsStore {
       this.plansRepository = null;
       this.recordsRepository = null;
       this.calendarRepository = null;
+      this.notesRepository = null;
+      this.notesRequest++;
       this.planRequest++;
       this.recordRequest++;
       this.planHistoryRequest++;
@@ -292,8 +333,11 @@ export class ItemsStore {
     this.recordRequest++;
     this.planHistoryRequest++;
     this.calendarRequest++;
+    this.notesRepository = null;
+    this.notesRequest++;
     this.emit({
       calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+      notes: emptyNotes(this.state.notes.status !== "unavailable"),
       status: "disconnected",
       stale: true,
       url: removeUrl ? "" : this.state.url,
@@ -310,6 +354,8 @@ export class ItemsStore {
     this.plansRepository = null;
     this.recordsRepository = null;
     this.calendarRepository = null;
+    this.notesRepository = null;
+    this.notesRequest++;
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
@@ -328,10 +374,12 @@ export class ItemsStore {
     this.recordRequest++;
     this.planHistoryRequest++;
     this.calendarRequest++;
+    this.notesRequest++;
     this.emit({
       plans: emptyPlans(),
       records: emptyRecords(),
       calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+      notes: emptyNotes(this.state.notes.status !== "unavailable"),
     });
     if (!this.repository || this.state.status !== "ready") return;
     this.emit({
@@ -366,12 +414,14 @@ export class ItemsStore {
     this.recordRequest++;
     this.planHistoryRequest++;
     this.calendarRequest++;
+    this.notesRequest++;
     this.emit({
       selected: null,
       detailState: "idle",
       plans: emptyPlans(),
       records: emptyRecords(),
       calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+      notes: emptyNotes(this.state.notes.status !== "unavailable"),
     });
   };
   refresh = async () => {
@@ -445,6 +495,77 @@ export class ItemsStore {
   private emitPlans(patch: Partial<PlansSnapshot>) {
     this.emit({ plans: { ...this.state.plans, ...patch } });
   }
+  private emitNotes(patch: Partial<NotesSnapshot>) {
+    this.emit({ notes: { ...this.state.notes, ...patch } });
+  }
+  private noteOwnerValid(ownerType: NoteOwnerType, ownerId: string) {
+    return ownerType === "item"
+      ? this.detailId === ownerId
+      : this.state.plans.itemId === this.detailId &&
+        this.state.plans.rows.some(plan => plan.plan_id === ownerId && plan.item_id === this.detailId);
+  }
+  openNoteDraft = (ownerType: NoteOwnerType, ownerId: string) => noteDrafts.open(ownerType, ownerId);
+  saveNoteDraft = (draft: NewCloudNote) => noteDrafts.save(draft);
+  loadNotes = async (ownerType: NoteOwnerType, ownerId: string) => {
+    if (!this.notesRepository?.enabled || this.state.mode !== "cloud" ||
+        this.state.status !== "ready" || !this.noteOwnerValid(ownerType, ownerId)) return;
+    const generation = this.epoch, request = ++this.notesRequest;
+    this.emitNotes({ ownerType, ownerId, status: "loading", error: "", notice: "", rows: [] });
+    try {
+      const rows = await this.notesRepository.list(ownerType, ownerId);
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.noteOwnerValid(ownerType, ownerId) &&
+          this.state.notes.ownerType === ownerType && this.state.notes.ownerId === ownerId)
+        this.emitNotes({ rows, status: "ready" });
+    } catch (error) {
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.state.notes.ownerType === ownerType && this.state.notes.ownerId === ownerId)
+        this.emitNotes({ status: "error", error: message(error) });
+    }
+  };
+  saveNote = async (draft: NewCloudNote, original?: CloudNote) => {
+    if (!this.notesRepository?.enabled || this.state.mode !== "cloud" ||
+        this.state.status !== "ready" || this.state.stale || this.state.busy ||
+        !this.noteOwnerValid(draft.owner_type, draft.owner_id) ||
+        this.state.notes.status !== "ready" ||
+        this.state.notes.ownerType !== draft.owner_type || this.state.notes.ownerId !== draft.owner_id)
+      throw new Error("雲端備註尚未就緒，請先重新讀取");
+    const repo = this.notesRepository, generation = this.epoch, request = ++this.notesRequest;
+    this.emit({ busy: true });
+    this.emitNotes({ error: "", notice: "" });
+    try {
+      const expected = { ...draft, title: draft.title.trim(), content: draft.content.trim() };
+      if (original) {
+        if (original.note_id !== draft.note_id || original.owner_type !== draft.owner_type ||
+            original.owner_id !== draft.owner_id) throw new Error("備註所屬資料不符");
+        await repo.update(original, { title: expected.title, content: expected.content });
+      } else {
+        // An ambiguous previous response may already have written this UUID.
+        const existing = await repo.get(draft.note_id);
+        if (existing) {
+          if (existing.owner_type !== draft.owner_type || existing.owner_id !== draft.owner_id ||
+              existing.title !== expected.title || existing.content !== expected.content)
+            throw new Error("相同備註識別碼已有不同內容，已停止重試");
+        } else await repo.create(draft);
+      }
+      const rows = await repo.list(draft.owner_type, draft.owner_id);
+      if (!rows.some(row => row.note_id === draft.note_id && row.owner_type === draft.owner_type &&
+          row.owner_id === draft.owner_id && row.title === expected.title && row.content === expected.content))
+        throw new Error("寫入已確認，但備註清單尚未更新；請重新讀取核對");
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.noteOwnerValid(draft.owner_type, draft.owner_id) &&
+          this.state.notes.ownerType === draft.owner_type && this.state.notes.ownerId === draft.owner_id)
+        this.emitNotes({ rows, status: "ready", notice: "備註已重新讀取雲端資料。" });
+      if (!original) noteDrafts.clear(draft);
+    } catch (error) {
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.state.notes.ownerType === draft.owner_type && this.state.notes.ownerId === draft.owner_id)
+        this.emitNotes({ status: "error", error: message(error) });
+      throw error;
+    } finally {
+      if (generation === this.epoch) this.emit({ busy: false });
+    }
+  };
   private loadCalendarStatuses(itemId: string, plans: MaintenancePlan[]) {
     const generation = this.epoch;
     const request = ++this.calendarRequest;

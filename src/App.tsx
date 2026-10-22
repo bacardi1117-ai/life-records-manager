@@ -89,7 +89,7 @@ export default function App() {
               <div className="source-toolbar">
                 <span>
                   {state.status === "ready" && !state.stale
-                    ? "Items、保養計畫與完成紀錄使用雲端；備註及照片尚未支援雲端同步。"
+                    ? "Items、保養計畫、完成紀錄與備註使用雲端；照片尚未支援雲端同步。"
                     : "雲端資料尚未就緒，已停止寫入；不會自動回退為 Mock。"}
                 </span>
                 <a href="#/settings" className="text-button">
@@ -138,6 +138,7 @@ export default function App() {
                   plans={state.plans}
                   records={state.records}
                   calendarSync={state.calendarSync}
+                  notes={state.notes}
                   cloud={cloud}
                   busy={state.busy}
                   readOnly={!writable}
