@@ -20,6 +20,31 @@ import type {
 } from "./maintenanceRecords";
 import { recordDrafts } from "./recordDrafts";
 import type { RecordDraft } from "./recordDrafts";
+import {
+  CALENDAR_SYNC_STATUS_API_ENABLED,
+  createCalendarSyncRepository,
+} from "./calendarSync";
+import type {
+  CalendarSyncRepository,
+  CalendarSyncStatus,
+} from "./calendarSync";
+export interface CalendarSyncSnapshot {
+  itemId: string | null;
+  enabled: boolean;
+  statuses: Record<
+    string,
+    {
+      state: "loading" | "ready" | "error";
+      data?: CalendarSyncStatus;
+      error?: string;
+    }
+  >;
+}
+const emptyCalendarSync = (enabled: boolean): CalendarSyncSnapshot => ({
+  itemId: null,
+  enabled,
+  statuses: {},
+});
 export interface RecordsSnapshot {
   itemId: string | null;
   status: "idle" | "loading" | "ready" | "error";
@@ -58,6 +83,7 @@ const emptyPlans = (): PlansSnapshot => ({
 interface Snapshot {
   plans: PlansSnapshot;
   records: RecordsSnapshot;
+  calendarSync: CalendarSyncSnapshot;
   mode: DataSource | null;
   url: string;
   status: "loading" | "connecting" | "ready" | "error" | "disconnected";
@@ -75,6 +101,7 @@ export class ItemsStore {
   private state: Snapshot = {
     plans: emptyPlans(),
     records: emptyRecords(),
+    calendarSync: emptyCalendarSync(CALENDAR_SYNC_STATUS_API_ENABLED),
     mode: null,
     url: "",
     status: "loading",
@@ -91,13 +118,22 @@ export class ItemsStore {
   private bridge: AppsScriptBridge | null = null;
   private plansRepository: MaintenancePlansRepository | null = null;
   private recordsRepository: MaintenanceRecordsRepository | null = null;
+  private calendarRepository: CalendarSyncRepository | null = null;
   private planRequest = 0;
   private recordRequest = 0;
   private planHistoryRequest = 0;
+  private calendarRequest = 0;
   private epoch = 0;
   private detailRequest = 0;
   private detailId: string | null = null;
-  constructor(private host: () => HTMLElement | null) {}
+  constructor(
+    private host: () => HTMLElement | null,
+    options: { calendarSyncStatusApiEnabled?: boolean } = {},
+  ) {
+    this.state.calendarSync = emptyCalendarSync(
+      options.calendarSyncStatusApiEnabled ?? CALENDAR_SYNC_STATUS_API_ENABLED,
+    );
+  }
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -115,13 +151,16 @@ export class ItemsStore {
     this.repository = null;
     this.plansRepository = null;
     this.recordsRepository = null;
+    this.calendarRepository = null;
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
+    this.calendarRequest++;
     this.detailId = null;
     this.emit({
       plans: emptyPlans(),
       records: emptyRecords(),
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
       mode,
       status,
       items: [],
@@ -180,6 +219,10 @@ export class ItemsStore {
       this.repository = repository;
       this.plansRepository = createMaintenancePlansRepository(bridge);
       this.recordsRepository = createMaintenanceRecordsRepository(bridge);
+      this.calendarRepository = createCalendarSyncRepository(
+        bridge,
+        this.state.calendarSync.enabled,
+      );
       this.emit({
         items,
         status: "ready",
@@ -193,9 +236,11 @@ export class ItemsStore {
       this.repository = null;
       this.plansRepository = null;
       this.recordsRepository = null;
+      this.calendarRepository = null;
       this.planRequest++;
       this.recordRequest++;
       this.planHistoryRequest++;
+      this.calendarRequest++;
       this.emit({ status: "error", stale: true, error: message(error) });
     }
   };
@@ -242,10 +287,13 @@ export class ItemsStore {
     this.repository = null;
     this.plansRepository = null;
     this.recordsRepository = null;
+    this.calendarRepository = null;
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
+    this.calendarRequest++;
     this.emit({
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
       status: "disconnected",
       stale: true,
       url: removeUrl ? "" : this.state.url,
@@ -261,9 +309,11 @@ export class ItemsStore {
     this.repository = null;
     this.plansRepository = null;
     this.recordsRepository = null;
+    this.calendarRepository = null;
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
+    this.calendarRequest++;
   };
   private upsert(item: LifeItem, items = this.state.items) {
     return items.some((i) => i.id === item.id)
@@ -277,7 +327,12 @@ export class ItemsStore {
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
-    this.emit({ plans: emptyPlans(), records: emptyRecords() });
+    this.calendarRequest++;
+    this.emit({
+      plans: emptyPlans(),
+      records: emptyRecords(),
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+    });
     if (!this.repository || this.state.status !== "ready") return;
     this.emit({
       selected: null,
@@ -310,11 +365,13 @@ export class ItemsStore {
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
+    this.calendarRequest++;
     this.emit({
       selected: null,
       detailState: "idle",
       plans: emptyPlans(),
       records: emptyRecords(),
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
     });
   };
   refresh = async () => {
@@ -388,6 +445,59 @@ export class ItemsStore {
   private emitPlans(patch: Partial<PlansSnapshot>) {
     this.emit({ plans: { ...this.state.plans, ...patch } });
   }
+  private loadCalendarStatuses(itemId: string, plans: MaintenancePlan[]) {
+    const generation = this.epoch;
+    const request = ++this.calendarRequest;
+    const repository = this.calendarRepository;
+    const current = () =>
+      generation === this.epoch &&
+      request === this.calendarRequest &&
+      this.detailId === itemId &&
+      this.state.mode === "cloud";
+    if (!repository?.enabled) {
+      this.emit({
+        calendarSync: { itemId, enabled: false, statuses: {} },
+      });
+      return;
+    }
+    this.emit({
+      calendarSync: {
+        itemId,
+        enabled: true,
+        statuses: Object.fromEntries(
+          plans.map((plan) => [plan.plan_id, { state: "loading" }]),
+        ),
+      },
+    });
+    for (const plan of plans) {
+      void repository.get(plan.plan_id).then(
+        (data) => {
+          if (current())
+            this.emit({
+              calendarSync: {
+                ...this.state.calendarSync,
+                statuses: {
+                  ...this.state.calendarSync.statuses,
+                  [plan.plan_id]: { state: "ready", data },
+                },
+              },
+            });
+        },
+        (error) => {
+          if (current())
+            this.emit({
+              calendarSync: {
+                ...this.state.calendarSync,
+                statuses: {
+                  ...this.state.calendarSync.statuses,
+                  [plan.plan_id]: { state: "error", error: message(error) },
+                },
+              },
+            });
+        },
+      );
+    }
+  }
   loadPlans = async (itemId: string) => {
     if (
       !this.plansRepository ||
@@ -399,6 +509,10 @@ export class ItemsStore {
       return;
     const generation = this.epoch,
       request = ++this.planRequest;
+    this.calendarRequest++;
+    this.emit({
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+    });
     this.emitPlans({
       itemId,
       status: "loading",
@@ -412,8 +526,10 @@ export class ItemsStore {
         generation === this.epoch &&
         request === this.planRequest &&
         this.detailId === itemId
-      )
+      ) {
         this.emitPlans({ rows, status: "ready" });
+        this.loadCalendarStatuses(itemId, rows);
+      }
     } catch (error) {
       if (
         generation === this.epoch &&
@@ -446,18 +562,24 @@ export class ItemsStore {
       request === this.planRequest &&
       this.detailId === itemId;
     this.emit({ busy: true, notice: "" });
+    this.calendarRequest++;
+    this.emit({
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+    });
     this.emitPlans({ error: "", notice: "" });
     try {
       await action(repository);
       // An acknowledged write must not be retried merely because its readback failed.
       try {
         const rows = await repository.list(itemId);
-        if (current())
+        if (current()) {
           this.emitPlans({
             rows,
             status: "ready",
             notice: "保養計畫已儲存至 Google Sheets，並重新讀取。",
           });
+          this.loadCalendarStatuses(itemId, rows);
+        }
       } catch {
         if (current())
           this.emitPlans({
@@ -626,6 +748,7 @@ export class ItemsStore {
         },
       },
     });
+    this.loadCalendarStatuses(draft.item_id, plans);
     try {
       recordDrafts.clear(draft);
     } catch {

@@ -36,7 +36,7 @@
 - 一般表單只允許名稱、週期數值與單位、計算模式、基準日期、提醒天數；更新只送實際差異。enabled 僅由啟用／停用 action 改變。
 - 日期維持 YYYY-MM-DD，時間戳保留後端格式。雲端 next_due_date 與 last_completed_date 完全由後端管理，不套用 Mock 的天數算法。
 - 新增、更新、停用、啟用後皆重新讀取該 item_id 清單。失敗停用計畫寫入、保留草稿及既有清單，需先重新讀取核對。已確認寫入但讀回失敗時關閉表單，避免重複新增。
-- 不新增 Calendar、Drive 或獨立備註雲端操作。提醒天數僅儲存設定，不宣稱已發送通知。
+- 不新增 Calendar 寫入、Drive 或獨立備註雲端操作。提醒天數僅儲存設定，不宣稱網站已發送通知。
 
 ## 雲端完成紀錄
 
@@ -45,3 +45,10 @@
 - 寫入結果不確定時先用 getMaintenanceRecord 查原 ID；查詢失敗時阻擋重送。已查到同內容則當作成功，內容不符或明確衝突則停止重試。duplicate 表示已儲存，不再新增。
 - 完成後重讀該事項計畫、該事項歷史及該計畫歷史。後端回傳的 last_completed_date／next_due_date 是唯一可信資料；歷史費用只用已成功載入的雲端 Records，按 record_id 去重。讀取失敗不得顯示假零金額。
 - 僅支援完成紀錄新增及查詢；不提供刪除或更正。不得將雲端紀錄寫進 Mock localStorage，不自動上傳 Mock 紀錄。
+
+## Google Calendar 同步狀態
+
+- 私人日曆同步 Apps Script 不公開為 Web App；前端只能透過既有 Bridge 的未來唯讀 `getCalendarSyncStatus({ plan_id })` 取得摘要，不讀取或顯示 calendar_id、event_id、授權資訊。
+- 目前後端 action 尚未建立。`VITE_CALENDAR_SYNC_STATUS_API_ENABLED` 預設關閉，關閉時 Repository 不得發出請求，介面顯示「同步狀態尚未連接」。只能在後端已上線並驗證後於建置時啟用。
+- 同步狀態按 item_id 與 plan_id 隔離；切換事項、重新讀取計畫、計畫寫入或完成保養後清理舊狀態並重新讀取。讀取錯誤或計畫更新時間晚於上次同步時間時不得顯示「已同步」。
+- 私人 Apps Script 每 15 分鐘定期檢查，並非即時同步；目前首次自動觸發尚待實際驗證。前端不提供日曆寫入或手動同步。

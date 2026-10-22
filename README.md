@@ -136,7 +136,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、獨立備註、照片及本機購買安裝說明尚未串接雲端 API；Google Calendar 與 Drive 尚未串接。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、獨立備註、照片及本機購買安裝說明尚未串接雲端 API；網站的 CalendarSync 狀態唯讀 API 尚未上線，Google Drive 亦未串接。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -214,7 +214,7 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 
 ## Google Sheets 保養完成紀錄（Web App v3.0）
 
-雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片、Google Calendar 提醒、獨立 Notes 同步與完成紀錄刪除／更正目前不可用。
+雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片、網站手動日曆同步、獨立 Notes 同步與完成紀錄刪除／更正目前不可用。
 
 Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintenanceRecord`、`getMaintenanceRecordsByItem` 四個 action。建立 payload 僅含 `record_id`、`plan_id`、`completed_date`、`title`、`amount`、`vendor`、`description`，不由前端修改計畫的最近完成日或下次保養日。成功（包含 `duplicate: true`）後重新讀取該事項計畫及事項／子計畫完成紀錄，詳細頁使用後端回傳的日期及金額；首頁現有統計僅包含事項數、事項金額與封存數，沒有跨事項保養費用欄位。雲端歷史按完成日期由新到舊，支援展開完整備註，並按 item_id／plan_id 隔離。
 
@@ -223,3 +223,13 @@ Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintena
 詳細頁的雲端保養費用只在 `getMaintenanceRecordsByItem` 成功後依真實 `amount` 加總，按 `record_id` 去重。讀取失敗顯示無法確認，不把 0 元當作真實結果。切換事項會清理畫面狀態；切換資料來源不會刪除既有 Mock 或未確認的草稿。
 
 單元及 Playwright 測試使用不存在的合成部署 URL，測試伺服器攔截所有 Google 請求。**測試通過不代表本次已完成正式 Google Sheets 實際讀寫驗證。** 真實 Google 登入、iframe 與 Web App v3.0 行為需另行驗證；本前端工作未修改 Apps Script 或建立試算表。
+
+## Google Calendar 同步狀態（前端預留）
+
+詳細頁原有「定期子項目」卡片顯示下次保養日、提前提醒天數、同步狀態及最近同步時間。日曆事件由獨立的私人 Apps Script 專案每 15 分鐘定期檢查，並非網站即時更新；首次自動觸發仍待驗證。網站沒有 Calendar 寫入權限，也沒有手動同步按鈕。
+
+目前 Items Web App **尚無** `getCalendarSyncStatus` action。正式建置預設 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=false`，因此畫面顯示「同步狀態尚未連接」且完全不發出該 action。待後端新增唯讀 Bridge action 並部署驗證後，才可在建置環境設定 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=true`；此開關不是讓使用者自行輸入的設定。API 介面為 `getCalendarSyncStatus`，payload `{ plan_id: string }`，只回傳 `{ plan_id, sync_status, last_synced_at, error_message, has_event }`。前端型別保留 CalendarSync 工作表欄位，但不顯示 calendar_id、event_id 或授權資訊。
+
+啟用後僅以該計畫的後端回應顯示 synced／disabled／error 等狀態；已同步還需確認有事件，且最近同步時間不早於計畫更新時間。不同事項與計畫的回應互不混用；更新計畫或完成保養後重新讀取狀態。失敗與未知狀態不顯示成功。單元與桌面／手機 Playwright 使用模擬 Adapter 驗證，**尚未驗證正式 CalendarSync API 或私人觸發器**。
+
+本機測試未來 API 的模擬路徑：先執行 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=true npm run build`，再執行 `CALENDAR_SYNC_E2E_ENABLED=true npm run test:e2e -- tests/e2e/calendar.spec.ts`。完成後以一般 `npm run build` 恢復預設關閉的產物；GitHub Pages 工作流程目前也使用預設關閉建置。

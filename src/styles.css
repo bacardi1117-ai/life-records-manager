@@ -1387,6 +1387,44 @@ textarea {
 .cloud-plan .task-actions {
   flex-wrap: wrap;
 }
+.cloud-plan {
+  flex-wrap: wrap;
+}
+.calendar-sync-status {
+  flex: 0 0 100%;
+  min-width: 0;
+  padding: 14px 18px;
+  border: 1px solid #e2e9df;
+  border-radius: 12px;
+  background: #f8faf6;
+}
+.calendar-sync-status h4 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #526c4b;
+}
+.calendar-sync-status dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 11px;
+}
+.calendar-sync-status dt {
+  color: #73836f;
+}
+.calendar-sync-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.calendar-sync-status .muted {
+  margin: 10px 0 0;
+}
+.calendar-sync-error {
+  margin: 10px 0 0;
+  color: #a34e4e;
+  overflow-wrap: anywhere;
+}
 .cloud-plan .task-info {
   min-width: 0;
   overflow-wrap: anywhere;
