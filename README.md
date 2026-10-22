@@ -211,3 +211,5 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 `src/api/maintenancePlans.ts` 負責型別與嚴格解析、白名單、ID／所屬事項檢查；`ItemsStore` 管理雲端計畫狀態與寫入後讀取。`CloudMaintenancePlans.tsx` 嵌入既有詳細頁分頁，使用原有排版與 Modal；Mock 仍使用原 TaskForm 及本機保養資料，不遷移或混入雲端計畫。
 
 新增單元與手機／桌面 Playwright 測試涵蓋：依事項載入、新增及修改後重新讀取、停用／啟用、重新整理、讀寫錯誤、保留草稿、寫入確認後讀取失敗、未知寫入結果、重複提交防護、延遲回應隔離及來源切換。原有 Items CRUD 與 Mock 測試持續執行。**這些是模擬 Bridge 測試，未驗證本次 MaintenancePlans 的正式 Google Sheets 讀寫。** 實際 iframe 登入與跨網站限制仍須以使用者部署環境另外驗證。
+
+若編輯時出現 `ReferenceError: updateMaintenancePlan is not defined`，且錯誤標示為 Apps Script 回報，表示 Bridge 已收到前端的 `updateMaintenancePlan` action，但部署中的 Apps Script 在處理該 action 時找不到同名函式。前端不會呼叫全域 `updateMaintenancePlan()`，也不會用新增動作代替修改。請由後端維護者核對目前部署版本的 Bridge.html action 對照、`bridgeUpdateMaintenancePlan` 與其呼叫的 service 函式，並確認 Web App 指向包含這些函式的版本。`disableMaintenancePlan` 與 `enableMaintenancePlan` 也應核對。出錯時先重新讀取計畫核對寫入結果；前端會保留編輯草稿與原清單，不宣稱儲存成功。

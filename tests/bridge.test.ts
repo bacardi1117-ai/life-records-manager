@@ -162,6 +162,35 @@ describe("bridge lifecycle and message correlation", () => {
     });
     await assertion;
   });
+  it.each([
+    "updateMaintenancePlan",
+    "disableMaintenancePlan",
+    "enableMaintenancePlan",
+  ] as const)(
+    "identifies an undefined Apps Script %s response",
+    async (action) => {
+      await connect();
+      const payload =
+        action === "updateMaintenancePlan"
+          ? { plan_id: "plan-one", changes: { interval_value: 12 } }
+          : { plan_id: "plan-one" };
+      const result = bridge.request(action, payload);
+      const sent = send.mock.lastCall![0];
+      expect(sent).toMatchObject({ action, payload, type: "request" });
+      expect(send.mock.lastCall![1]).toBe(origin);
+      const assertion = expect(result).rejects.toThrow(
+        `Apps Script 的 ${action} 回報：ReferenceError: ${action} is not defined`,
+      );
+      emit({
+        type: "response",
+        id: sent.id,
+        ok: false,
+        error: `ReferenceError: ${action} is not defined`,
+      });
+      await assertion;
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
   it("cleans up on ready timeout and rejects pending requests on disconnect", async () => {
     const timeout = expect(bridge.connect(url)).rejects.toThrow(
       "未收到 Bridge ready",
