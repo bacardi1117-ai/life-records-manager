@@ -2,7 +2,7 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
-目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；備註與照片尚未支援雲端同步；Google 日曆提醒仍為後續規劃。
+目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；備註與照片尚未支援雲端同步；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -136,7 +136,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、獨立備註、照片及本機購買安裝說明尚未串接雲端 API；網站的 CalendarSync 狀態唯讀 API 尚未上線，Google Drive 亦未串接。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、獨立備註、照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 亦未串接。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -224,12 +224,12 @@ Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintena
 
 單元及 Playwright 測試使用不存在的合成部署 URL，測試伺服器攔截所有 Google 請求。**測試通過不代表本次已完成正式 Google Sheets 實際讀寫驗證。** 真實 Google 登入、iframe 與 Web App v3.0 行為需另行驗證；本前端工作未修改 Apps Script 或建立試算表。
 
-## Google Calendar 同步狀態（前端預留）
+## Google Calendar 同步狀態（Web App v3.1）
 
-詳細頁原有「定期子項目」卡片顯示下次保養日、提前提醒天數、同步狀態及最近同步時間。日曆事件由獨立的私人 Apps Script 專案每 15 分鐘定期檢查，並非網站即時更新；首次自動觸發仍待驗證。網站沒有 Calendar 寫入權限，也沒有手動同步按鈕。
+正式雲端模式預設啟用 `getCalendarSyncStatus({ plan_id })`，沿用既有 Web App URL 及 life-records-v1 iframe Bridge。進入詳細頁或重新整理時依保養計畫讀取；新增、修改、停用、恢復及完成保養後重新讀取。Mock 不呼叫此 API。舊版部署可在建置時設定 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=false` 暫時關閉讀取。
 
-目前 Items Web App **尚無** `getCalendarSyncStatus` action。正式建置預設 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=false`，因此畫面顯示「同步狀態尚未連接」且完全不發出該 action。待後端新增唯讀 Bridge action 並部署驗證後，才可在建置環境設定 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=true`；此開關不是讓使用者自行輸入的設定。API 介面為 `getCalendarSyncStatus`，payload `{ plan_id: string }`，只回傳 `{ plan_id, sync_status, last_synced_at, error_message, has_event }`。前端型別保留 CalendarSync 工作表欄位，但不顯示 calendar_id、event_id 或授權資訊。
+API 回傳 `{ plan_id, sync_status, last_synced_at, error_message, has_event }`，前端不顯示 Calendar ID 或 Event ID。synced 顯示「Google Calendar 已同步紀錄」、disabled 顯示「提醒已停用」、not_synced 顯示「尚未同步」、error 顯示「同步失敗」；讀取失敗顯示「同步狀態讀取失敗」。此處僅根據 CalendarSync 紀錄，不代表已即時查證 Google Calendar 事件。私人 Apps Script 每 15 分鐘檢查，網站沒有日曆寫入或手動同步權限。
 
-啟用後僅以該計畫的後端回應顯示 synced／disabled／error 等狀態；已同步還需確認有事件，且最近同步時間不早於計畫更新時間。不同事項與計畫的回應互不混用；更新計畫或完成保養後重新讀取狀態。失敗與未知狀態不顯示成功。單元與桌面／手機 Playwright 使用模擬 Adapter 驗證，**尚未驗證正式 CalendarSync API 或私人觸發器**。
+時間比較由 `src/lib/calendarTimestamps.ts` 處理：無時區的 `YYYY-MM-DD HH:mm:ss` 或 `YYYY-MM-DDTHH:mm:ss` 依台北 UTC+08:00 解讀；ISO 的 Z 或明確 offset 則依其時區轉換。同一時間不會因瀏覽器時區不同而產生不同結果。synced 紀錄早於計畫 updated_at 時顯示「等待下次同步」；時間無效、事件不存在或狀態不一致時顯示「無法確認」。時間字串維持後端原樣顯示。
 
-本機測試未來 API 的模擬路徑：先執行 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=true npm run build`，再執行 `CALENDAR_SYNC_E2E_ENABLED=true npm run test:e2e -- tests/e2e/calendar.spec.ts`。完成後以一般 `npm run build` 恢復預設關閉的產物；GitHub Pages 工作流程目前也使用預設關閉建置。
+`npm test`、`npm run build` 與 `npm run test:e2e` 預設測試已啟用的前端。測試只使用合成 Bridge，未驗證正式 Web App v3.1、CalendarSync 工作表或私人排程。若要測試關閉旗標，可先以 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=false npm run build` 建置，再執行 `CALENDAR_SYNC_E2E_ENABLED=false npm run test:e2e -- tests/e2e/calendar.spec.ts`；完成後用一般 `npm run build` 恢復正式啟用產物。

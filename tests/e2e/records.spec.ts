@@ -59,6 +59,13 @@ test("complete rereads backend due date and records, updates cost and both histo
     page.getByText("已儲存完成紀錄，並重新讀取保養計畫與歷史。"),
   ).toBeVisible();
   expect(state.plans[0].last_completed_date).toBe("2026-10-22");
+  await expect
+    .poll(
+      () =>
+        state.calls.filter((call) => call.action === "getCalendarSyncStatus")
+          .length,
+    )
+    .toBeGreaterThan(1);
   expect(
     state.calls.find((call) => call.action === "createMaintenanceRecord")
       ?.payload,

@@ -1,6 +1,6 @@
 import type { CalendarSyncSnapshot } from "../api/itemsStore";
 import type { MaintenancePlan } from "../api/maintenancePlans";
-import { isConfirmedCalendarSync } from "../api/calendarSync";
+import { calendarSyncLabel } from "../api/calendarSync";
 
 export default function CalendarSyncStatus({
   plan,
@@ -17,18 +17,14 @@ export default function CalendarSyncStatus({
   const label = !snapshot.enabled
     ? "同步狀態尚未連接"
     : planState === "error"
-      ? "無法確認"
+      ? "同步狀態讀取失敗"
       : entry?.state === "loading" || !entry
         ? "正在讀取同步狀態…"
         : entry.state === "error"
-          ? "無法確認"
-          : data && isConfirmedCalendarSync(plan, data)
-            ? "已同步"
-            : data?.sync_status === "disabled"
-              ? "已停用"
-              : data?.sync_status === "error"
-                ? "同步失敗"
-                : "尚未同步 / 無法確認";
+          ? "同步狀態讀取失敗"
+          : data
+            ? calendarSyncLabel(plan, data)
+            : "無法確認";
   return (
     <section
       className="calendar-sync-status"
@@ -55,8 +51,8 @@ export default function CalendarSyncStatus({
         </p>
       )}
       <p className="muted small">
-        私人 Apps Script 每 15
-        分鐘定期檢查，並非即時同步；首次自動執行仍待驗證。
+        私人 Apps Script 每 15 分鐘定期檢查，並非即時同步。 此處依 CalendarSync
+        紀錄顯示，未即時查證 Google Calendar 事件。
       </p>
     </section>
   );

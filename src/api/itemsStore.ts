@@ -779,6 +779,10 @@ export class ItemsStore {
     const generation = this.epoch,
       repo = this.recordsRepository;
     this.emit({ busy: true });
+    this.calendarRequest++;
+    this.emit({
+      calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
+    });
     this.emitRecords({ error: "", notice: "" });
     try {
       const plan = await this.plansRepository.get(draft.plan_id);
