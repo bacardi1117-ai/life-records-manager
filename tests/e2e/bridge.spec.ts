@@ -150,7 +150,7 @@ test("cloud creation opens server ID in original detail and never creates Mock c
     "name",
     "warranty_date",
   ]);
-  for (const tab of ["歷史紀錄", "備註", "照片"]) {
+  for (const tab of ["備註", "照片"]) {
     await page.getByRole("tab", { name: new RegExp(tab) }).click();
     await expect(page.getByRole("tabpanel")).toContainText("尚未支援雲端同步");
     await expect(page.getByRole("tabpanel").getByRole("button")).toHaveCount(0);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -18,7 +18,13 @@ import type {
 import { daysUntil, dueLabel, money, nextDue, today } from "../lib/dates";
 import { CompleteForm, ItemForm, Modal, PhotoInput, TaskForm } from "./Forms";
 import CloudMaintenancePlans from "./CloudMaintenancePlans";
-import type { ItemsStore, PlansSnapshot } from "../api/itemsStore";
+import type {
+  ItemsStore,
+  PlansSnapshot,
+  RecordsSnapshot,
+} from "../api/itemsStore";
+import { totalMaintenanceAmount } from "../api/maintenanceRecords";
+import { CloudHistoryList } from "./CloudMaintenanceRecords";
 function Gallery({ photos }: { photos: Photo[] }) {
   return (
     <div className="gallery">
@@ -41,6 +47,7 @@ export default function Detail({
   item,
   store,
   plans,
+  records,
   save,
   complete,
   busy,
@@ -53,6 +60,7 @@ export default function Detail({
 }: {
   store: ItemsStore;
   plans: PlansSnapshot;
+  records: RecordsSnapshot;
   cloud?: boolean;
   readOnly?: boolean;
   update: (item: LifeItem, original: LifeItem) => Promise<void>;
@@ -65,6 +73,10 @@ export default function Detail({
   busy: boolean;
 }) {
   const [tab, setTab] = useState("定期子項目");
+  useEffect(() => {
+    if (cloud && !busy && records.status === "idle")
+      void store.loadRecords(item.id);
+  }, [cloud, busy, records.status, item.id, store]);
   const [modal, setModal] = useState<
     "edit" | "task" | "complete" | "photos" | null
   >(null);
@@ -130,6 +142,20 @@ export default function Detail({
             <dd>{item.warrantyDate || "未填寫"}</dd>
             <dt>狀態</dt>
             <dd>{item.status === "archived" ? "已封存" : "使用中"}</dd>
+            {cloud && (
+              <>
+                <dt>累計保養支出</dt>
+                <dd>
+                  {records.error
+                    ? "無法確認，請重新讀取"
+                    : records.itemId === item.id && records.status === "ready"
+                      ? money(totalMaintenanceAmount(records.rows))
+                      : records.status === "error"
+                        ? "無法確認，請重新讀取"
+                        : "正在讀取…"}
+                </dd>
+              </>
+            )}
             {!cloud && (
               <>
                 <dt>累計保養支出</dt>
@@ -173,7 +199,12 @@ export default function Detail({
                   {cloud
                     ? t === "定期子項目"
                       ? "雲端"
-                      : "未同步"
+                      : t === "歷史紀錄"
+                        ? records.itemId === item.id &&
+                          records.status === "ready"
+                          ? records.rows.length
+                          : "雲端"
+                        : "未同步"
                     : t === "定期子項目"
                       ? item.tasks.length
                       : t === "歷史紀錄"
@@ -191,9 +222,36 @@ export default function Detail({
                 item={item}
                 store={store}
                 state={plans}
+                records={records}
                 busy={busy}
                 readOnly={readOnly}
               />
+            ) : cloud && tab === "歷史紀錄" ? (
+              <>
+                <div className="section-heading">
+                  <h2>每一次照顧，都有記錄</h2>
+                  <Clock3 size={19} />
+                </div>
+                <CloudHistoryList
+                  rows={records.itemId === item.id ? records.rows : []}
+                  status={records.status}
+                  error={records.error}
+                  emptyText="這件事項還沒有完成紀錄。"
+                  planNames={Object.fromEntries(
+                    plans.rows.map((plan) => [plan.plan_id, plan.name]),
+                  )}
+                />
+                <button
+                  className="text-button"
+                  disabled={busy || records.status === "loading"}
+                  onClick={() => void store.loadRecords(item.id)}
+                >
+                  重新讀取完成紀錄
+                </button>
+                <p className="muted small">
+                  完成紀錄目前只提供新增及查詢，無法刪除或更正。
+                </p>
+              </>
             ) : cloud ? (
               <div className="empty">
                 <h2>{tab}尚未支援雲端同步</h2>

@@ -2,7 +2,7 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
-目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD 與 MaintenancePlans 保養計畫；完成保養、歷史、備註與照片尚未支援雲端同步；Google 日曆提醒仍為後續規劃。
+目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；備註與照片尚未支援雲端同步；Google 日曆提醒仍為後續規劃。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -136,7 +136,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD 與 MaintenancePlans 計畫管理。完成保養寫入 MaintenanceRecords、推進下次日期、歷史紀錄、備註、照片及本機購買安裝說明尚未串接雲端 API。完成保養按鈕停用，相關分頁顯示「尚未支援雲端同步」。Google Calendar 與 Drive 尚未串接。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、獨立備註、照片及本機購買安裝說明尚未串接雲端 API；Google Calendar 與 Drive 尚未串接。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -197,7 +197,7 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 5. 每次新增、修改、停用及啟用後重新查詢同一事項的清單，以後端結果更新畫面。下次日期不由前端推算，字串日期不轉換時區；時間戳保持後端格式。
 6. 讀寫失敗顯示錯誤，保留原清單／未送出草稿，暫停計畫寫入。使用「重新讀取保養計畫」或表單中的「重新讀取計畫並保留草稿」核對後再操作。逾時表示結果未知，請先核對清單，勿直接重複新增。
 7. 若寫入已確認但後續讀取失敗，關閉已送出表單且不顯示成功訊息，要求重新讀取。儲存期間停用重複提交。
-8. 提前提醒天數目前只保存設定，不代表已寄信、推播或建立行事曆提醒。「完成保養」仍停用。
+8. 提前提醒天數目前只保存設定，不代表已寄信、推播或建立行事曆提醒。已啟用計畫可新增完成紀錄；停用計畫的完成操作不可用。
 
 | action | payload | 回傳 |
 | --- | --- | --- |
@@ -211,3 +211,15 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 `src/api/maintenancePlans.ts` 負責型別與嚴格解析、白名單、ID／所屬事項檢查；`ItemsStore` 管理雲端計畫狀態與寫入後讀取。`CloudMaintenancePlans.tsx` 嵌入既有詳細頁分頁，使用原有排版與 Modal；Mock 仍使用原 TaskForm 及本機保養資料，不遷移或混入雲端計畫。
 
 新增單元與手機／桌面 Playwright 測試涵蓋：依事項載入、新增及修改後重新讀取、停用／啟用、重新整理、讀寫錯誤、保留草稿、寫入確認後讀取失敗、未知寫入結果、重複提交防護、延遲回應隔離及來源切換。原有 Items CRUD 與 Mock 測試持續執行。**這些是模擬 Bridge 測試，未驗證本次 MaintenancePlans 的正式 Google Sheets 讀寫。** 實際 iframe 登入與跨網站限制仍須以使用者部署環境另外驗證。
+
+## Google Sheets 保養完成紀錄（Web App v3.0）
+
+雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片、Google Calendar 提醒、獨立 Notes 同步與完成紀錄刪除／更正目前不可用。
+
+Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintenanceRecord`、`getMaintenanceRecordsByItem` 四個 action。建立 payload 僅含 `record_id`、`plan_id`、`completed_date`、`title`、`amount`、`vendor`、`description`，不由前端修改計畫的最近完成日或下次保養日。成功（包含 `duplicate: true`）後重新讀取該事項計畫及事項／子計畫完成紀錄，詳細頁使用後端回傳的日期及金額；首頁現有統計僅包含事項數、事項金額與封存數，沒有跨事項保養費用欄位。雲端歷史按完成日期由新到舊，支援展開完整備註，並按 item_id／plan_id 隔離。
+
+每份尚未確認的草稿使用同一個 `crypto.randomUUID()` record_id；本瀏覽器分頁的 `sessionStorage` 在重整時保留這份草稿，鍵名 `life-records-manager:pending-cloud-records:v1`，與 Mock 的 `localStorage` 完全分開。送出逾時或結果不確定時，先以 `getMaintenanceRecord` 查原 ID：若已存在且內容一致則重讀資料；若查不到，可由使用者沿用同一 ID 重試；若查詢也失敗則暫停送出，直到查明。後端明確衝突或內容不符會停止重試。已確認寫入但後續重讀失敗時同樣不重送。`duplicate: true` 視為原紀錄已存在，重讀後顯示明確結果。
+
+詳細頁的雲端保養費用只在 `getMaintenanceRecordsByItem` 成功後依真實 `amount` 加總，按 `record_id` 去重。讀取失敗顯示無法確認，不把 0 元當作真實結果。切換事項會清理畫面狀態；切換資料來源不會刪除既有 Mock 或未確認的草稿。
+
+單元及 Playwright 測試使用不存在的合成部署 URL，測試伺服器攔截所有 Google 請求。**測試通過不代表本次已完成正式 Google Sheets 實際讀寫驗證。** 真實 Google 登入、iframe 與 Web App v3.0 行為需另行驗證；本前端工作未修改 Apps Script 或建立試算表。
