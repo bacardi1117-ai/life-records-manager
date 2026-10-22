@@ -6,6 +6,12 @@ export const BRIDGE_ACTIONS = [
   "updateItem",
   "archiveItem",
   "restoreItem",
+  "getMaintenancePlans",
+  "getMaintenancePlan",
+  "createMaintenancePlan",
+  "updateMaintenancePlan",
+  "disableMaintenancePlan",
+  "enableMaintenancePlan",
 ] as const;
 export type BridgeAction = (typeof BRIDGE_ACTIONS)[number];
 export function validateWebAppUrl(value: string): string {

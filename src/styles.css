@@ -1383,3 +1383,23 @@ textarea {
 .stats strong {
   overflow-wrap: anywhere;
 }
+
+.cloud-plan .task-actions {
+  flex-wrap: wrap;
+}
+.cloud-plan .task-info {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .cloud-plan .task-actions {
+    width: 100%;
+    padding-left: 47px;
+    justify-content: flex-start;
+  }
+}
+
+.cloud-plan-form .field-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.cloud-plan-form label { min-width: 0; }

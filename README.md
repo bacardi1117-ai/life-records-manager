@@ -2,7 +2,7 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
-目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD，保養、歷史、備註與照片尚未支援雲端同步；Google 日曆提醒仍為後續規劃。
+目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD 與 MaintenancePlans 保養計畫；完成保養、歷史、備註與照片尚未支援雲端同步；Google 日曆提醒仍為後續規劃。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -136,12 +136,12 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端只支援 Items CRUD。定期保養、歷史紀錄、備註、照片及本機購買安裝說明尚未有雲端 API。雲端詳細頁的相關分頁顯示「尚未支援雲端同步」，不顯示或儲存 Mock 子資料；資料層也會拒絕這些寫入。本次暫停保養功能開發，只保留既有 Mock 行為與回歸測試。
+雲端支援 Items CRUD 與 MaintenancePlans 計畫管理。完成保養寫入 MaintenanceRecords、推進下次日期、歷史紀錄、備註、照片及本機購買安裝說明尚未串接雲端 API。完成保養按鈕停用，相關分頁顯示「尚未支援雲端同步」。Google Calendar 與 Drive 尚未串接。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
 - 資料來源選擇使用 `life-records-manager:data-source:v1`（cloud 或 mock）。
-- 雲端 Items 僅存在工作階段記憶體，不寫入 Mock localStorage。切換來源會清理畫面快取，但不刪除任何本機紀錄，也不自動上傳範例。
+- 雲端 Items 與 MaintenancePlans 僅存在工作階段記憶體，不寫入 Mock localStorage。切換來源會清理畫面快取，但不刪除任何本機紀錄，也不自動上傳範例。
 - 移除雲端網址不等於切換 Mock；如果原本在 Mock 模式，移除網址也不影響本機操作。
 
 ### 共用資料架構
@@ -185,3 +185,29 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 - 共用 repository：欄位映射、只更新差異、後端 ID、寫入後讀取、錯誤結果、未支援操作保護。
 - 共用 store：來源優先順序、手動 Mock 選擇持久化、失敗不回退、延遲回應隔離、本機資料保護。
 - Playwright 桌面／手機：首頁至詳細頁一致、修改金額與日期、重新整理、只更新指定 ID、新增無 Mock 副本、保留失敗草稿、確認切換模式、停止未支援同步操作，以及既有 Mock 功能回歸。
+
+## Google Sheets 定期子項目
+
+沿用既有連線設定及 Apps Script v2.0 Bridge，不需要 Google Sheets API 或 OAuth，也不修改後端。PR 合併及部署後，連線成功即可進入原本的事項詳細頁「定期子項目」分頁。
+
+1. 以目前 `item_id` 自動讀取保養計畫；顯示名稱、週期、計算模式、下次保養日、提前提醒天數及啟用狀態。
+2. 「新增子項目」可設定名稱、正整數週期、天／月／年、完成日起算／固定週期、基準日期及非負整數提醒天數。
+3. 編輯只傳送實際修改的可編輯欄位。ID、啟用狀態、完成日期、下次日期、建立及更新時間不出現在一般編輯 payload。
+4. 可停用或重新啟用；停用仍保留在原清單中，並非刪除。
+5. 每次新增、修改、停用及啟用後重新查詢同一事項的清單，以後端結果更新畫面。下次日期不由前端推算，字串日期不轉換時區；時間戳保持後端格式。
+6. 讀寫失敗顯示錯誤，保留原清單／未送出草稿，暫停計畫寫入。使用「重新讀取保養計畫」或表單中的「重新讀取計畫並保留草稿」核對後再操作。逾時表示結果未知，請先核對清單，勿直接重複新增。
+7. 若寫入已確認但後續讀取失敗，關閉已送出表單且不顯示成功訊息，要求重新讀取。儲存期間停用重複提交。
+8. 提前提醒天數目前只保存設定，不代表已寄信、推播或建立行事曆提醒。「完成保養」仍停用。
+
+| action | payload | 回傳 |
+| --- | --- | --- |
+| getMaintenancePlans | `{ item_id }` | MaintenancePlan 陣列 |
+| getMaintenancePlan | `{ plan_id }` | MaintenancePlan 或 null |
+| createMaintenancePlan | `{ item_id, name, interval_value, interval_unit, calculation_mode, base_date, reminder_days }` | success、plan_id、item_id、name、next_due_date |
+| updateMaintenancePlan | `{ plan_id, changes }` | success、message、plan |
+| disableMaintenancePlan | `{ plan_id }` | success、plan_id、enabled=false、message |
+| enableMaintenancePlan | `{ plan_id }` | success、plan_id、enabled=true、message |
+
+`src/api/maintenancePlans.ts` 負責型別與嚴格解析、白名單、ID／所屬事項檢查；`ItemsStore` 管理雲端計畫狀態與寫入後讀取。`CloudMaintenancePlans.tsx` 嵌入既有詳細頁分頁，使用原有排版與 Modal；Mock 仍使用原 TaskForm 及本機保養資料，不遷移或混入雲端計畫。
+
+新增單元與手機／桌面 Playwright 測試涵蓋：依事項載入、新增及修改後重新讀取、停用／啟用、重新整理、讀寫錯誤、保留草稿、寫入確認後讀取失敗、未知寫入結果、重複提交防護、延遲回應隔離及來源切換。原有 Items CRUD 與 Mock 測試持續執行。**這些是模擬 Bridge 測試，未驗證本次 MaintenancePlans 的正式 Google Sheets 讀寫。** 實際 iframe 登入與跨網站限制仍須以使用者部署環境另外驗證。

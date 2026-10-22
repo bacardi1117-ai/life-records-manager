@@ -200,7 +200,7 @@ export default function Dashboard({
           <div className="schedule-card">
             {cloud ? (
               <p className="cloud-notice">
-                定期保養、歷史紀錄、備註與照片尚未支援雲端同步。
+                請進入事項的「定期子項目」查看雲端保養計畫。完成保養、歷史紀錄、備註與照片尚未支援雲端同步。
               </p>
             ) : (
               <>

@@ -26,5 +26,14 @@
 - 選擇 cloud 後，連線失敗必須停止寫入，不自動回退 Mock。重新整理保留使用者選擇；切換 Mock 前顯示不同來源的確認。
 - 雲端 updateItem 的 changes 只含相對於編輯初始資料的實際變更欄位；不要把整個 LifeItem 送入後端。更新成功後以原 item_id 重新 getItem。
 - 新增必須採用後端回傳 item_id；不得自建替代 ID 或 Mock 副本。跨 ID／舊連線的回應不可覆蓋目前資料。
-- 雲端保養、歷史、備註、照片顯示「尚未支援雲端同步」並停用寫入；本次暫停保養功能開發。
+- 雲端 MaintenancePlans 沿用同一 Bridge 及 ItemsStore，在既有定期子項目分頁操作；Mock 保養維持既有格式，不互相轉存。完成保養、歷史、備註、照片仍顯示「尚未支援雲端同步」並停用寫入。
 - 不修改既有 localStorage 資料格式或自動遷移紀錄。切換來源只清理畫面快取；共用型別新增欄位需相容舊 Mock 資料。
+
+## 雲端保養計畫
+
+- `src/api/maintenancePlans.ts` 定義 DTO、驗證、欄位白名單及 repository；元件透過 ItemsStore 操作，不建立另一條連線或寫入 localStorage。
+- 每筆計畫須核對 item_id／plan_id；延遲回應不得污染其他事項或來源。編輯及啟用切換前先讀取單筆確認所屬事項。
+- 一般表單只允許名稱、週期數值與單位、計算模式、基準日期、提醒天數；更新只送實際差異。enabled 僅由啟用／停用 action 改變。
+- 日期維持 YYYY-MM-DD，時間戳保留後端格式。雲端 next_due_date 與 last_completed_date 完全由後端管理，不套用 Mock 的天數算法。
+- 新增、更新、停用、啟用後皆重新讀取該 item_id 清單。失敗停用計畫寫入、保留草稿及既有清單，需先重新讀取核對。已確認寫入但讀回失敗時關閉表單，避免重複新增。
+- 不新增 MaintenanceRecords、Calendar、Drive 或備註雲端操作。提醒天數僅儲存設定，不宣稱已發送通知。
