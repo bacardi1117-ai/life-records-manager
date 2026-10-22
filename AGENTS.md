@@ -36,7 +36,7 @@
 - 一般表單只允許名稱、週期數值與單位、計算模式、基準日期、提醒天數；更新只送實際差異。enabled 僅由啟用／停用 action 改變。
 - 日期維持 YYYY-MM-DD，時間戳保留後端格式。雲端 next_due_date 與 last_completed_date 完全由後端管理，不套用 Mock 的天數算法。
 - 新增、更新、停用、啟用後皆重新讀取該 item_id 清單。失敗停用計畫寫入、保留草稿及既有清單，需先重新讀取核對。已確認寫入但讀回失敗時關閉表單，避免重複新增。
-- 不新增 Calendar 寫入或 Drive 操作。Notes 只使用 v3.2 已定義的四個 action。提醒天數僅儲存設定，不宣稱網站已發送通知。
+- 保養計畫不新增 Calendar 寫入或 Drive 附件操作。Notes 只使用 v3.2 已定義的四個 action。提醒天數僅儲存設定，不宣稱網站已發送通知。
 
 ## 雲端完成紀錄
 
@@ -58,3 +58,9 @@
 - `src/api/cloudNotes.ts` 只透過既有 Bridge 呼叫 getNotes/getNote/createNote/updateNote；依 owner_type 與 owner_id 隔離 item 和 plan，禁止提交私人 Web App URL 或 ID。
 - 新增草稿使用與 Mock 分開的 sessionStorage 及穩定 UUID；重試先以 getNote 查詢原 ID，衝突時停止。寫入後重讀清單，失敗保留草稿，不顯示成功。
 - 不提供封存或刪除 Notes；Mock 紀錄不自動上傳，雲端資料不寫進 Mock localStorage。模擬 Bridge 測試不代表正式 Google Sheets 讀寫已驗證。
+
+## 私人 Google Drive 第一階段
+
+- OAuth 僅使用 Google Identity Services Token Client 與 drive.file scope；Client ID 從 GitHub Actions Variable 進入 Vite 建置，未設定時顯示未設定。
+- Access Token 僅保留在記憶體；不透過 Apps Script Bridge，不寫入 localStorage 或原有 Mock 照片資料。Drive API 僅驗證連線，不列出或展示私人檔案。
+- 模擬授權與 Drive API 測試不得宣稱正式 Google 帳號授權成功；本階段不提供上傳、刪除或分享。

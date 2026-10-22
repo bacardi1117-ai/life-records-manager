@@ -153,9 +153,9 @@ test("cloud creation opens server ID in original detail and never creates Mock c
   for (const tab of ["備註", "照片"]) {
     await page.getByRole("tab", { name: new RegExp(tab) }).click();
     await expect(page.getByRole("tabpanel")).toContainText(
-      tab === "備註" ? "生活筆記" : "尚未支援雲端同步",
+      tab === "備註" ? "生活筆記" : "私人 Google Drive",
     );
-    if (tab === "照片") await expect(page.getByRole("tabpanel").getByRole("button")).toHaveCount(0);
+    if (tab === "照片") await expect(page.getByRole("tabpanel").getByRole("button", { name: "新增照片" })).toHaveCount(0);
   }
   await expect(page.getByText("本機測試備註")).toHaveCount(0);
 });

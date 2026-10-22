@@ -1463,3 +1463,12 @@ textarea {
     padding-left: 0;
   }
 }
+
+.drive-connection {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  max-width: 38rem;
+}
+.drive-connection p { margin: 0; }
+.drive-connection button { justify-self: start; }
