@@ -20,6 +20,7 @@ import { CompleteForm, ItemForm, Modal, PhotoInput, TaskForm } from "./Forms";
 import CloudMaintenancePlans from "./CloudMaintenancePlans";
 import type {
   ItemsStore,
+  CalendarSyncSnapshot,
   PlansSnapshot,
   RecordsSnapshot,
 } from "../api/itemsStore";
@@ -48,6 +49,7 @@ export default function Detail({
   store,
   plans,
   records,
+  calendarSync,
   save,
   complete,
   busy,
@@ -61,6 +63,7 @@ export default function Detail({
   store: ItemsStore;
   plans: PlansSnapshot;
   records: RecordsSnapshot;
+  calendarSync: CalendarSyncSnapshot;
   cloud?: boolean;
   readOnly?: boolean;
   update: (item: LifeItem, original: LifeItem) => Promise<void>;
@@ -223,6 +226,7 @@ export default function Detail({
                 store={store}
                 state={plans}
                 records={records}
+                calendarSync={calendarSync}
                 busy={busy}
                 readOnly={readOnly}
               />

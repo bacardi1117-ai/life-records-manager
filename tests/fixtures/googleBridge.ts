@@ -1,5 +1,6 @@
 import type { MaintenancePlan } from "../../src/api/maintenancePlans";
 import type { CloudMaintenanceRecord } from "../../src/api/maintenanceRecords";
+import type { CalendarSyncStatus } from "../../src/api/calendarSync";
 import type { Page } from "@playwright/test";
 // Synthetic deployment; every request is fulfilled by Playwright, never Google.
 export const TEST_WEB_APP = new URL(
@@ -53,6 +54,9 @@ export async function mockGoogleBridge(page: Page) {
     rows: [structuredClone(sampleItem)],
     plans: [structuredClone(samplePlan)],
     records: [] as CloudMaintenanceRecord[],
+    calendarStatuses: {} as Record<string, CalendarSyncStatus>,
+    failCalendarRead: false,
+    calendarDelay: {} as Record<string, number>,
     failRecordWrites: false,
     failRecordReads: false,
     failRecordGet: false,
@@ -173,6 +177,21 @@ export async function mockGoogleBridge(page: Page) {
         setTimeout(resolve, state.planDelay[data.payload.item_id]),
       );
     switch (data.action) {
+      case "getCalendarSyncStatus":
+        if (state.calendarDelay[data.payload.plan_id])
+          await new Promise((resolve) =>
+            setTimeout(resolve, state.calendarDelay[data.payload.plan_id]),
+          );
+        if (state.failCalendarRead) error = "模擬日曆狀態讀取失敗";
+        else
+          result = state.calendarStatuses[data.payload.plan_id] ?? {
+            plan_id: data.payload.plan_id,
+            sync_status: "pending",
+            last_synced_at: "",
+            error_message: "",
+            has_event: false,
+          };
+        break;
       case "getMaintenanceRecordsByItem":
         if (state.failRecordReads) error = "模擬完成紀錄讀取失敗";
         else
@@ -274,6 +293,7 @@ export async function mockGoogleBridge(page: Page) {
             ...state.plans[planIndex],
             ...data.payload.changes,
             next_due_date: "2028-02-29",
+            updated_at: "2026-10-23 00:00:00",
           };
           result = {
             success: true,
@@ -288,6 +308,7 @@ export async function mockGoogleBridge(page: Page) {
         else {
           const plan = state.plans[planIndex];
           plan.enabled = data.action === "enableMaintenancePlan";
+          plan.updated_at = "2026-10-23 00:00:00";
           result = {
             success: true,
             plan_id: plan.plan_id,

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Edit3, Plus, Repeat2 } from "lucide-react";
 import type { LifeItem } from "../models";
-import type { ItemsStore, PlansSnapshot } from "../api/itemsStore";
+import type {
+  CalendarSyncSnapshot,
+  ItemsStore,
+  PlansSnapshot,
+} from "../api/itemsStore";
 import type {
   MaintenancePlan,
   MaintenancePlanFields,
@@ -9,6 +13,7 @@ import type {
 import { Modal } from "./Forms";
 import { CloudHistoryList, CompletionForm } from "./CloudMaintenanceRecords";
 import type { RecordsSnapshot } from "../api/itemsStore";
+import CalendarSyncStatus from "./CalendarSyncStatus";
 
 const units = { day: "天", month: "月", year: "年" };
 export default function CloudMaintenancePlans({
@@ -16,6 +21,7 @@ export default function CloudMaintenancePlans({
   store,
   state,
   records,
+  calendarSync,
   busy,
   readOnly,
 }: {
@@ -23,6 +29,7 @@ export default function CloudMaintenancePlans({
   store: ItemsStore;
   state: PlansSnapshot;
   records: RecordsSnapshot;
+  calendarSync: CalendarSyncSnapshot;
   busy: boolean;
   readOnly: boolean;
 }) {
@@ -130,6 +137,11 @@ export default function CloudMaintenancePlans({
                 {viewingPlan === plan.plan_id ? "收合紀錄" : "查看紀錄"}
               </button>
             </div>
+            <CalendarSyncStatus
+              plan={plan}
+              snapshot={calendarSync}
+              planState={state.status}
+            />
             {viewingPlan === plan.plan_id && (
               <div className="plan-history">
                 <CloudHistoryList
@@ -172,8 +184,11 @@ export default function CloudMaintenancePlans({
         重新讀取完成紀錄
       </button>
       <p className="cloud-notice">
-        Google Calendar 自動提醒、Google Drive
-        照片及獨立備註尚未支援雲端同步。提前提醒天數目前只保存設定，不會發送通知。
+        Google Calendar 由私人 Apps Script 定期檢查。
+        {calendarSync.enabled
+          ? "網站僅讀取同步狀態，不提供日曆寫入或手動同步。"
+          : "網站目前尚未連接同步狀態唯讀 API。"}
+        Google Drive 照片及獨立備註仍未支援雲端同步。
       </p>
       {completing && (
         <Modal title="完成保養" close={() => !busy && setCompleting(null)}>
