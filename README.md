@@ -233,3 +233,9 @@ API 回傳 `{ plan_id, sync_status, last_synced_at, error_message, has_event }`�
 時間比較由 `src/lib/calendarTimestamps.ts` 處理：無時區的 `YYYY-MM-DD HH:mm:ss` 或 `YYYY-MM-DDTHH:mm:ss` 依台北 UTC+08:00 解讀；ISO 的 Z 或明確 offset 則依其時區轉換。同一時間不會因瀏覽器時區不同而產生不同結果。synced 紀錄早於計畫 updated_at 時顯示「等待下次同步」；時間無效、事件不存在或狀態不一致時顯示「無法確認」。時間字串維持後端原樣顯示。
 
 `npm test`、`npm run build` 與 `npm run test:e2e` 預設測試已啟用的前端。測試只使用合成 Bridge，未驗證正式 Web App v3.1、CalendarSync 工作表或私人排程。若要測試關閉旗標，可先以 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=false npm run build` 建置，再執行 `CALENDAR_SYNC_E2E_ENABLED=false npm run test:e2e -- tests/e2e/calendar.spec.ts`；完成後用一般 `npm run build` 恢復正式啟用產物。
+
+## 雲端備註準備階段
+
+原本詳細頁的「備註」分頁已預留獨立 Notes Adapter、資料來源隔離及新增／編輯／封存介面。**目前後端 Notes Bridge action 未確認，正式建置預設停用**：雲端分頁顯示「備註雲端 API 尚未連接」，不發出 Notes 請求，也不會將本機 Mock 備註當成雲端紀錄。待確認的 action、資料欄位及去重要求記錄在 `docs/notes-bridge-contract.md`；後端部署前不可將 `VITE_NOTES_API_ENABLED` 設為 true。
+
+開發者可在攔截全部 Google 請求的模擬環境測試：`VITE_NOTES_API_ENABLED=true npm run build` 後執行 `NOTES_E2E_ENABLED=true npm run test:e2e -- tests/e2e/cloudNotes.spec.ts`。測試完成後再執行一般 `npm run build`，恢復正式停用的產物。這些測試不代表 Notes 工作表已建立或實際同步成功。

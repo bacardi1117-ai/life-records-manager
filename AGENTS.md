@@ -36,7 +36,7 @@
 - 一般表單只允許名稱、週期數值與單位、計算模式、基準日期、提醒天數；更新只送實際差異。enabled 僅由啟用／停用 action 改變。
 - 日期維持 YYYY-MM-DD，時間戳保留後端格式。雲端 next_due_date 與 last_completed_date 完全由後端管理，不套用 Mock 的天數算法。
 - 新增、更新、停用、啟用後皆重新讀取該 item_id 清單。失敗停用計畫寫入、保留草稿及既有清單，需先重新讀取核對。已確認寫入但讀回失敗時關閉表單，避免重複新增。
-- 不新增 Calendar 寫入、Drive 或獨立備註雲端操作。提醒天數僅儲存設定，不宣稱網站已發送通知。
+- 不新增 Calendar 寫入或 Drive 操作。獨立備註前端契約尚待後端確認，預設保持停用。提醒天數僅儲存設定，不宣稱網站已發送通知。
 
 ## 雲端完成紀錄
 
@@ -52,3 +52,9 @@
 - Web App v3.1 已提供 action，`VITE_CALENDAR_SYNC_STATUS_API_ENABLED` 預設啟用；明確設為 false 時不得發出請求。無時區時間依台北 UTC+08:00 解讀，ISO 時間依明確 offset，禁止直接比較不同時區字串。
 - 同步狀態按 item_id 與 plan_id 隔離；切換事項、重新讀取計畫、計畫寫入或完成保養後清理舊狀態並重新讀取。讀取錯誤或計畫更新時間晚於上次同步時間時不得顯示「已同步」。
 - 私人 Apps Script 每 15 分鐘定期檢查，並非即時同步；介面僅表示 CalendarSync 紀錄，不能宣稱即時查證事件。前端不提供日曆寫入或手動同步。
+
+## 雲端 Notes 準備階段
+
+- `docs/notes-bridge-contract.md` 是提案，尚未確認後端實作。正式建置必須維持 `VITE_NOTES_API_ENABLED` 關閉，不得發出未知 Notes action 或宣稱已同步。
+- `src/api/cloudNotes.ts` 只透過既有 Bridge 讀寫，`ItemsStore` 隔離 item_id 與資料來源。Mock 紀錄不自動上傳，雲端資料不寫進 Mock localStorage。
+- 開啟 Notes API 前，先核對 action、payload、回傳型別及相同 note_id 去重規則，並以正式環境驗證。模擬 Bridge 測試不代表實際 Google Sheets 讀寫。

@@ -17,6 +17,11 @@ export const BRIDGE_ACTIONS = [
   "getMaintenanceRecord",
   "getMaintenanceRecordsByItem",
   "getCalendarSyncStatus",
+  "getNotes",
+  "getNote",
+  "createNote",
+  "updateNote",
+  "archiveNote",
 ] as const;
 export type BridgeAction = (typeof BRIDGE_ACTIONS)[number];
 export function validateWebAppUrl(value: string): string {

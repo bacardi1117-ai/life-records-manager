@@ -138,6 +138,7 @@ export default function App() {
                   plans={state.plans}
                   records={state.records}
                   calendarSync={state.calendarSync}
+                  notes={state.notes}
                   cloud={cloud}
                   busy={state.busy}
                   readOnly={!writable}
