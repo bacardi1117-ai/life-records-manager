@@ -1,4 +1,5 @@
 import type { MaintenancePlan } from "../../src/api/maintenancePlans";
+import type { CloudMaintenanceRecord } from "../../src/api/maintenanceRecords";
 import type { Page } from "@playwright/test";
 // Synthetic deployment; every request is fulfilled by Playwright, never Google.
 export const TEST_WEB_APP = new URL(
@@ -35,10 +36,29 @@ export const samplePlan: MaintenancePlan = {
   created_at: "2026-10-21 21:55:53",
   updated_at: "2026-10-21 21:55:53",
 };
+export const sampleRecord: CloudMaintenanceRecord = {
+  record_id: "existing-record",
+  plan_id: "plan-one",
+  item_id: "test-cloud-item",
+  title: "既有安全檢查",
+  completed_date: "2026-10-21",
+  amount: 350,
+  vendor: "測試廠商",
+  description: "既有紀錄",
+  created_at: "2026-10-21 21:55:53",
+  updated_at: "2026-10-21 21:55:53",
+};
 export async function mockGoogleBridge(page: Page) {
   const state = {
     rows: [structuredClone(sampleItem)],
     plans: [structuredClone(samplePlan)],
+    records: [] as CloudMaintenanceRecord[],
+    failRecordWrites: false,
+    failRecordReads: false,
+    failRecordGet: false,
+    loseRecordResponse: false,
+    recordWriteDelay: 0,
+    recordDelayByItem: {} as Record<string, number>,
     failPlanReads: false,
     failPlanWrites: false,
     failPlanReadback: false,
@@ -109,6 +129,27 @@ export async function mockGoogleBridge(page: Page) {
     const planIndex = state.plans.findIndex(
       (plan) => plan.plan_id === data.payload.plan_id,
     );
+    const recordIndex = state.records.findIndex(
+      (record) => record.record_id === data.payload.record_id,
+    );
+    if (data.action === "createMaintenanceRecord" && state.recordWriteDelay)
+      await new Promise((resolve) =>
+        setTimeout(resolve, state.recordWriteDelay),
+      );
+    if (data.action === "createMaintenanceRecord" && state.failRecordWrites) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "模擬完成紀錄寫入失敗" }),
+      });
+      return;
+    }
+    if (
+      data.action === "getMaintenanceRecordsByItem" &&
+      state.recordDelayByItem[data.payload.item_id]
+    )
+      await new Promise((resolve) =>
+        setTimeout(resolve, state.recordDelayByItem[data.payload.item_id]),
+      );
     const planWrite = [
       "createMaintenancePlan",
       "updateMaintenancePlan",
@@ -132,6 +173,73 @@ export async function mockGoogleBridge(page: Page) {
         setTimeout(resolve, state.planDelay[data.payload.item_id]),
       );
     switch (data.action) {
+      case "getMaintenanceRecordsByItem":
+        if (state.failRecordReads) error = "模擬完成紀錄讀取失敗";
+        else
+          result = state.records.filter(
+            (record) => record.item_id === data.payload.item_id,
+          );
+        break;
+      case "getMaintenanceRecords":
+        if (state.failRecordReads) error = "模擬完成紀錄讀取失敗";
+        else
+          result = state.records.filter(
+            (record) => record.plan_id === data.payload.plan_id,
+          );
+        break;
+      case "getMaintenanceRecord":
+        if (state.failRecordGet) error = "模擬單筆完成紀錄讀取失敗";
+        else result = state.records[recordIndex] ?? null;
+        break;
+      case "createMaintenanceRecord": {
+        const existing = state.records[recordIndex];
+        if (existing) {
+          if (
+            existing.plan_id !== data.payload.plan_id ||
+            existing.completed_date !== data.payload.completed_date ||
+            existing.title !== data.payload.title ||
+            existing.amount !== data.payload.amount ||
+            existing.vendor !== data.payload.vendor ||
+            existing.description !== data.payload.description
+          )
+            error = "完成紀錄內容衝突";
+          else
+            result = {
+              success: true,
+              duplicate: true,
+              record_id: existing.record_id,
+              plan_id: existing.plan_id,
+              item_id: existing.item_id,
+              completed_date: existing.completed_date,
+              record: existing,
+            };
+        } else if (planIndex < 0 || !state.plans[planIndex].enabled)
+          error = "保養計畫已停用";
+        else {
+          const record: CloudMaintenanceRecord = {
+            ...sampleRecord,
+            ...data.payload,
+            item_id: state.plans[planIndex].item_id,
+          };
+          state.records.push(record);
+          state.plans[planIndex] = {
+            ...state.plans[planIndex],
+            last_completed_date: record.completed_date,
+            next_due_date: "2028-03-15",
+          };
+          result = {
+            success: true,
+            duplicate: false,
+            record_id: record.record_id,
+            plan_id: record.plan_id,
+            item_id: record.item_id,
+            completed_date: record.completed_date,
+            next_due_date: state.plans[planIndex].next_due_date,
+            record,
+          };
+        }
+        break;
+      }
       case "getMaintenancePlans":
         if (state.failPlanReads) error = "模擬保養讀取失敗";
         else
@@ -234,7 +342,8 @@ export async function mockGoogleBridge(page: Page) {
     if (planWrite && state.failPlanReadback) state.failPlanReads = true;
     const ignore =
       (state.loseWriteResponse && data.action === "createItem") ||
-      (planWrite && state.losePlanResponse);
+      (planWrite && state.losePlanResponse) ||
+      (data.action === "createMaintenanceRecord" && state.loseRecordResponse);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(

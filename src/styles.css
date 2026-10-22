@@ -1402,4 +1402,26 @@ textarea {
 .cloud-plan-form .field-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
-.cloud-plan-form label { min-width: 0; }
+.cloud-plan-form label {
+  min-width: 0;
+}
+
+.cloud-plan .plan-history {
+  width: 100%;
+  padding: 4px 0 0 55px;
+}
+.cloud-history details {
+  margin-top: 8px;
+}
+.cloud-history summary {
+  cursor: pointer;
+  color: #1d6b5d;
+}
+.cloud-history p {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .cloud-plan .plan-history {
+    padding-left: 0;
+  }
+}

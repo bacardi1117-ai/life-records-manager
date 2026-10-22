@@ -7,22 +7,28 @@ import type {
   MaintenancePlanFields,
 } from "../api/maintenancePlans";
 import { Modal } from "./Forms";
+import { CloudHistoryList, CompletionForm } from "./CloudMaintenanceRecords";
+import type { RecordsSnapshot } from "../api/itemsStore";
 
 const units = { day: "天", month: "月", year: "年" };
 export default function CloudMaintenancePlans({
   item,
   store,
   state,
+  records,
   busy,
   readOnly,
 }: {
   item: LifeItem;
   store: ItemsStore;
   state: PlansSnapshot;
+  records: RecordsSnapshot;
   busy: boolean;
   readOnly: boolean;
 }) {
   const [editing, setEditing] = useState<MaintenancePlan | "new" | null>(null);
+  const [completing, setCompleting] = useState<MaintenancePlan | null>(null);
+  const [viewingPlan, setViewingPlan] = useState<string | null>(null);
   useEffect(() => {
     if (!busy && state.status === "idle") void store.loadPlans(item.id);
   }, [store, item.id, busy, state.status]);
@@ -77,6 +83,7 @@ export default function CloudMaintenancePlans({
               <p>
                 下次保養 {plan.next_due_date} · 提前 {plan.reminder_days} 天提醒
               </p>
+              <p>最近完成 {plan.last_completed_date || "尚無紀錄"}</p>
               <span className="status">
                 {plan.enabled ? "已啟用" : "已停用"}
               </span>
@@ -103,21 +110,85 @@ export default function CloudMaintenancePlans({
               </button>
               <button
                 className="secondary"
-                disabled
-                title="完成保養尚未支援雲端同步"
+                disabled={
+                  disabled || !plan.enabled || records.status !== "ready"
+                }
+                onClick={() => setCompleting(plan)}
               >
                 完成保養
               </button>
+              <button
+                className="text-button"
+                onClick={() => {
+                  if (viewingPlan === plan.plan_id) setViewingPlan(null);
+                  else {
+                    setViewingPlan(plan.plan_id);
+                    void store.loadPlanRecords(item.id, plan.plan_id);
+                  }
+                }}
+              >
+                {viewingPlan === plan.plan_id ? "收合紀錄" : "查看紀錄"}
+              </button>
             </div>
+            {viewingPlan === plan.plan_id && (
+              <div className="plan-history">
+                <CloudHistoryList
+                  rows={
+                    records.byPlan.planId === plan.plan_id
+                      ? records.byPlan.rows
+                      : []
+                  }
+                  status={
+                    records.byPlan.planId === plan.plan_id
+                      ? records.byPlan.status
+                      : "loading"
+                  }
+                  error={
+                    records.byPlan.planId === plan.plan_id
+                      ? records.byPlan.error
+                      : ""
+                  }
+                  emptyText="這個子項目還沒有完成紀錄。"
+                  planNames={{ [plan.plan_id]: plan.name }}
+                />
+              </div>
+            )}
           </div>
         ))}
       {ready && !state.rows.length && (
         <p className="empty">還沒有定期子項目，新增一個保養計畫吧。</p>
       )}
+      {records.error && (
+        <p className="error-banner" role="alert">
+          {records.error}
+        </p>
+      )}
+      {records.notice && <p role="status">{records.notice}</p>}
+      <button
+        className="text-button"
+        disabled={busy || records.status === "loading"}
+        onClick={() => void store.loadRecords(item.id)}
+      >
+        重新讀取完成紀錄
+      </button>
       <p className="cloud-notice">
-        完成保養、歷史紀錄、備註、照片與 Google Calendar
-        尚未支援雲端同步。提前提醒天數目前只保存設定，不會發送通知。
+        Google Calendar 自動提醒、Google Drive
+        照片及獨立備註尚未支援雲端同步。提前提醒天數目前只保存設定，不會發送通知。
       </p>
+      {completing && (
+        <Modal title="完成保養" close={() => !busy && setCompleting(null)}>
+          <CompletionForm
+            key={completing.plan_id}
+            itemId={item.id}
+            plan={completing}
+            store={store}
+            records={records}
+            busy={busy}
+            readOnly={readOnly}
+            close={() => setCompleting(null)}
+          />
+        </Modal>
+      )}
       {editing && (
         <Modal
           title={editing === "new" ? "新增定期子項目" : "編輯定期子項目"}
@@ -253,9 +324,7 @@ function MaintenancePlanForm({
           defaultValue={initial?.reminder_days ?? 7}
         />
       </label>
-      <p className="muted small">
-        下次保養日由後端計算；完成紀錄與提醒通知尚未串接。
-      </p>
+      <p className="muted small">下次保養日由後端計算；提醒通知尚未串接。</p>
       {recover && (
         <button
           type="button"

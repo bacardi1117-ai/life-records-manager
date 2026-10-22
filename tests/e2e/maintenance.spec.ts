@@ -29,7 +29,7 @@ test("existing tab loads parent plans, creates, edits, disables, enables and sur
   await expect(row(page)).toContainText("2027-04-21");
   await expect(
     row(page).getByRole("button", { name: "完成保養", exact: true }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   expect(
     state.calls.find((call) => call.action === "getMaintenancePlans")?.payload,
   ).toEqual({ item_id: sampleItem.item_id });

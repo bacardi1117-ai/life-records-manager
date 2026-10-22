@@ -10,6 +10,37 @@ import type {
   MaintenancePlanFields,
   MaintenancePlansRepository,
 } from "./maintenancePlans";
+import {
+  createMaintenanceRecordsRepository,
+  matchesSubmission,
+} from "./maintenanceRecords";
+import type {
+  CloudMaintenanceRecord,
+  MaintenanceRecordsRepository,
+} from "./maintenanceRecords";
+import { recordDrafts } from "./recordDrafts";
+import type { RecordDraft } from "./recordDrafts";
+export interface RecordsSnapshot {
+  itemId: string | null;
+  status: "idle" | "loading" | "ready" | "error";
+  rows: CloudMaintenanceRecord[];
+  error: string;
+  notice: string;
+  byPlan: {
+    planId: string | null;
+    status: "idle" | "loading" | "ready" | "error";
+    rows: CloudMaintenanceRecord[];
+    error: string;
+  };
+}
+const emptyRecords = (): RecordsSnapshot => ({
+  itemId: null,
+  status: "idle",
+  rows: [],
+  error: "",
+  notice: "",
+  byPlan: { planId: null, status: "idle", rows: [], error: "" },
+});
 export interface PlansSnapshot {
   itemId: string | null;
   rows: MaintenancePlan[];
@@ -26,6 +57,7 @@ const emptyPlans = (): PlansSnapshot => ({
 });
 interface Snapshot {
   plans: PlansSnapshot;
+  records: RecordsSnapshot;
   mode: DataSource | null;
   url: string;
   status: "loading" | "connecting" | "ready" | "error" | "disconnected";
@@ -42,6 +74,7 @@ const message = (error: unknown) =>
 export class ItemsStore {
   private state: Snapshot = {
     plans: emptyPlans(),
+    records: emptyRecords(),
     mode: null,
     url: "",
     status: "loading",
@@ -57,7 +90,10 @@ export class ItemsStore {
   private repository: ItemsRepository | null = null;
   private bridge: AppsScriptBridge | null = null;
   private plansRepository: MaintenancePlansRepository | null = null;
+  private recordsRepository: MaintenanceRecordsRepository | null = null;
   private planRequest = 0;
+  private recordRequest = 0;
+  private planHistoryRequest = 0;
   private epoch = 0;
   private detailRequest = 0;
   private detailId: string | null = null;
@@ -78,10 +114,14 @@ export class ItemsStore {
     this.bridge = null;
     this.repository = null;
     this.plansRepository = null;
+    this.recordsRepository = null;
     this.planRequest++;
+    this.recordRequest++;
+    this.planHistoryRequest++;
     this.detailId = null;
     this.emit({
       plans: emptyPlans(),
+      records: emptyRecords(),
       mode,
       status,
       items: [],
@@ -139,6 +179,7 @@ export class ItemsStore {
       connectionSettings.save(url);
       this.repository = repository;
       this.plansRepository = createMaintenancePlansRepository(bridge);
+      this.recordsRepository = createMaintenanceRecordsRepository(bridge);
       this.emit({
         items,
         status: "ready",
@@ -151,7 +192,10 @@ export class ItemsStore {
       this.bridge = null;
       this.repository = null;
       this.plansRepository = null;
+      this.recordsRepository = null;
       this.planRequest++;
+      this.recordRequest++;
+      this.planHistoryRequest++;
       this.emit({ status: "error", stale: true, error: message(error) });
     }
   };
@@ -197,7 +241,10 @@ export class ItemsStore {
     this.bridge = null;
     this.repository = null;
     this.plansRepository = null;
+    this.recordsRepository = null;
     this.planRequest++;
+    this.recordRequest++;
+    this.planHistoryRequest++;
     this.emit({
       status: "disconnected",
       stale: true,
@@ -213,7 +260,10 @@ export class ItemsStore {
     this.bridge = null;
     this.repository = null;
     this.plansRepository = null;
+    this.recordsRepository = null;
     this.planRequest++;
+    this.recordRequest++;
+    this.planHistoryRequest++;
   };
   private upsert(item: LifeItem, items = this.state.items) {
     return items.some((i) => i.id === item.id)
@@ -225,7 +275,9 @@ export class ItemsStore {
       request = ++this.detailRequest;
     this.detailId = id;
     this.planRequest++;
-    this.emit({ plans: emptyPlans() });
+    this.recordRequest++;
+    this.planHistoryRequest++;
+    this.emit({ plans: emptyPlans(), records: emptyRecords() });
     if (!this.repository || this.state.status !== "ready") return;
     this.emit({
       selected: null,
@@ -256,7 +308,14 @@ export class ItemsStore {
     this.detailRequest++;
     this.detailId = null;
     this.planRequest++;
-    this.emit({ selected: null, detailState: "idle", plans: emptyPlans() });
+    this.recordRequest++;
+    this.planHistoryRequest++;
+    this.emit({
+      selected: null,
+      detailState: "idle",
+      plans: emptyPlans(),
+      records: emptyRecords(),
+    });
   };
   refresh = async () => {
     if (!this.repository || this.state.busy) return;
@@ -428,6 +487,281 @@ export class ItemsStore {
     this.writePlan(itemId, (repository) =>
       repository.setEnabled(itemId, planId, enabled),
     );
+  private emitRecords(patch: Partial<RecordsSnapshot>) {
+    this.emit({ records: { ...this.state.records, ...patch } });
+  }
+  loadRecords = async (itemId: string) => {
+    if (
+      !this.recordsRepository ||
+      this.state.mode !== "cloud" ||
+      this.state.status !== "ready" ||
+      this.state.busy ||
+      this.detailId !== itemId
+    )
+      return;
+    const generation = this.epoch,
+      request = ++this.recordRequest;
+    this.emitRecords({
+      itemId,
+      status: "loading",
+      error: "",
+      rows: this.state.records.itemId === itemId ? this.state.records.rows : [],
+    });
+    try {
+      const rows = await this.recordsRepository.byItem(itemId);
+      if (
+        generation === this.epoch &&
+        request === this.recordRequest &&
+        this.detailId === itemId
+      )
+        this.emitRecords({ rows, status: "ready" });
+    } catch (error) {
+      if (
+        generation === this.epoch &&
+        request === this.recordRequest &&
+        this.detailId === itemId
+      )
+        this.emitRecords({ status: "error", error: message(error) });
+    }
+  };
+  loadPlanRecords = async (itemId: string, planId: string) => {
+    if (
+      !this.recordsRepository ||
+      this.state.mode !== "cloud" ||
+      this.state.status !== "ready" ||
+      this.detailId !== itemId ||
+      !this.state.plans.rows.some(
+        (plan) => plan.item_id === itemId && plan.plan_id === planId,
+      )
+    )
+      return;
+    const generation = this.epoch,
+      request = ++this.planHistoryRequest;
+    this.emitRecords({
+      byPlan: { planId, status: "loading", rows: [], error: "" },
+    });
+    try {
+      const rows = await this.recordsRepository.byPlan(planId);
+      if (rows.some((row) => row.item_id !== itemId))
+        throw new Error("保養紀錄所屬事項不符");
+      if (
+        generation === this.epoch &&
+        request === this.planHistoryRequest &&
+        this.detailId === itemId
+      )
+        this.emitRecords({
+          byPlan: { planId, status: "ready", rows, error: "" },
+        });
+    } catch (error) {
+      if (
+        generation === this.epoch &&
+        request === this.planHistoryRequest &&
+        this.detailId === itemId
+      )
+        this.emitRecords({
+          byPlan: { planId, status: "error", rows: [], error: message(error) },
+        });
+    }
+  };
+  openCompletionDraft = (itemId: string, plan: MaintenancePlan) =>
+    recordDrafts.open(itemId, plan);
+  getCompletionDraft = (itemId: string, planId: string) =>
+    recordDrafts.read(itemId, planId);
+  saveCompletionDraft = (draft: RecordDraft) => {
+    if (
+      draft.phase !== "editing" ||
+      this.detailId !== draft.item_id ||
+      this.state.mode !== "cloud"
+    )
+      throw new Error("目前不能修改這份完成草稿");
+    recordDrafts.save(draft);
+  };
+  private async readCompletedRecord(draft: RecordDraft, duplicate: boolean) {
+    const repo = this.recordsRepository!,
+      plansRepo = this.plansRepository!;
+    const record = await repo.get(draft.record_id);
+    if (!record)
+      throw new Error("寫入已確認，但尚未讀到完成紀錄；請重新查詢，勿重複送出");
+    if (!matchesSubmission(record, draft)) {
+      recordDrafts.save({ ...draft, phase: "conflict" });
+      throw new Error("相同 record_id 的內容與草稿不一致，已停止重試");
+    }
+    const [plans, records, planRecords] = await Promise.all([
+      plansRepo.list(draft.item_id),
+      repo.byItem(draft.item_id),
+      repo.byPlan(draft.plan_id),
+    ]);
+    if (
+      !plans.some((plan) => plan.plan_id === draft.plan_id) ||
+      !records.some((row) => matchesSubmission(row, draft)) ||
+      !planRecords.some((row) => matchesSubmission(row, draft))
+    )
+      throw new Error("寫入已確認，但重新讀取的計畫或紀錄尚未一致；請重新查詢");
+    if (this.detailId !== draft.item_id || this.state.mode !== "cloud")
+      throw new Error("目前事項已切換，請重新讀取確認完成結果");
+    ++this.planRequest;
+    ++this.recordRequest;
+    ++this.planHistoryRequest;
+    this.emit({
+      plans: {
+        itemId: draft.item_id,
+        rows: plans,
+        status: "ready",
+        error: "",
+        notice: "",
+      },
+      records: {
+        itemId: draft.item_id,
+        rows: records,
+        status: "ready",
+        error: "",
+        notice: duplicate
+          ? "此完成紀錄已存在，已重新讀取，沒有重複新增。"
+          : "已儲存完成紀錄，並重新讀取保養計畫與歷史。",
+        byPlan: {
+          planId: draft.plan_id,
+          status: "ready",
+          rows: planRecords,
+          error: "",
+        },
+      },
+    });
+    try {
+      recordDrafts.clear(draft);
+    } catch {
+      /* Readback is authoritative; a leftover draft remains acknowledged. */
+    }
+  }
+  submitCompletion = async (draft: RecordDraft): Promise<void> => {
+    if (
+      !this.recordsRepository ||
+      !this.plansRepository ||
+      this.state.mode !== "cloud" ||
+      this.state.status !== "ready" ||
+      this.state.stale ||
+      this.state.busy ||
+      this.detailId !== draft.item_id ||
+      this.state.plans.status !== "ready" ||
+      this.state.records.status !== "ready" ||
+      draft.phase !== "editing"
+    )
+      throw new Error("雲端完成紀錄尚未就緒，請先重新讀取");
+    const saved = recordDrafts.read(draft.item_id, draft.plan_id);
+    if (
+      !saved ||
+      saved.record_id !== draft.record_id ||
+      saved.phase !== "editing"
+    )
+      throw new Error("草稿識別碼不符，已停止送出");
+    const generation = this.epoch,
+      repo = this.recordsRepository;
+    this.emit({ busy: true });
+    this.emitRecords({ error: "", notice: "" });
+    try {
+      const plan = await this.plansRepository.get(draft.plan_id);
+      if (!plan || plan.item_id !== draft.item_id || !plan.enabled)
+        throw new Error("此保養計畫已停用或不屬於目前事項，不能完成保養");
+      recordDrafts.save({ ...draft, phase: "uncertain" });
+      let duplicate = false;
+      try {
+        const result = await repo.create(draft);
+        duplicate = result.duplicate;
+        recordDrafts.save({ ...draft, phase: "acknowledged" });
+      } catch (writeError) {
+        if (/conflict|衝突|不同內容/i.test(message(writeError))) {
+          recordDrafts.save({ ...draft, phase: "conflict" });
+          throw new Error(
+            message(writeError).includes("已停止重試")
+              ? message(writeError)
+              : `${message(writeError)}；已停止重試`,
+          );
+        }
+        // Every uncertain write is resolved by the same record_id before any retry.
+        try {
+          const existing = await repo.get(draft.record_id);
+          if (existing) {
+            if (!matchesSubmission(existing, draft)) {
+              recordDrafts.save({ ...draft, phase: "conflict" });
+              throw new Error("相同 record_id 已有不同內容，已停止重試");
+            }
+            duplicate = true;
+            recordDrafts.save({ ...draft, phase: "acknowledged" });
+          } else {
+            const conflict = /conflict|衝突|不同內容/i.test(
+              message(writeError),
+            );
+            recordDrafts.save({
+              ...draft,
+              phase: conflict ? "conflict" : "editing",
+            });
+            throw new Error(
+              conflict
+                ? `${message(writeError)}；已停止重試`
+                : `${message(writeError)}；未查到原 record_id，請核對後以同一草稿重試`,
+            );
+          }
+        } catch (checkError) {
+          if (
+            recordDrafts.read(draft.item_id, draft.plan_id)?.phase ===
+            "uncertain"
+          )
+            throw new Error(
+              `寫入結果未確認，查詢原 record_id 亦失敗：${message(checkError)}。請重新查詢，勿新增識別碼`,
+            );
+          throw checkError;
+        }
+      }
+      await this.readCompletedRecord(draft, duplicate);
+    } catch (error) {
+      if (generation === this.epoch && this.detailId === draft.item_id)
+        this.emitRecords({ error: message(error), notice: "" });
+      throw error;
+    } finally {
+      if (generation === this.epoch) this.emit({ busy: false });
+    }
+  };
+  checkCompletion = async (draft: RecordDraft): Promise<boolean> => {
+    if (
+      !this.recordsRepository ||
+      this.state.busy ||
+      this.state.mode !== "cloud" ||
+      this.detailId !== draft.item_id
+    )
+      throw new Error("雲端資料尚未就緒");
+    const saved = recordDrafts.read(draft.item_id, draft.plan_id);
+    if (!saved || saved.record_id !== draft.record_id)
+      throw new Error("原草稿識別碼不符");
+    const generation = this.epoch;
+    this.emit({ busy: true });
+    try {
+      const existing = await this.recordsRepository.get(draft.record_id);
+      if (!existing) {
+        if (saved.phase !== "acknowledged" && saved.phase !== "conflict")
+          recordDrafts.save({ ...saved, phase: "editing" });
+        this.emitRecords({
+          error:
+            saved.phase === "acknowledged"
+              ? "後端已確認寫入，但暫時查不到紀錄；請稍後再查詢，勿重複送出"
+              : "尚未查到原 record_id；可沿用同一草稿重新送出",
+          notice: "",
+        });
+        return false;
+      }
+      if (!matchesSubmission(existing, saved)) {
+        recordDrafts.save({ ...saved, phase: "conflict" });
+        throw new Error("相同 record_id 已有不同內容，已停止重試");
+      }
+      recordDrafts.save({ ...saved, phase: "acknowledged" });
+      await this.readCompletedRecord(saved, true);
+      return true;
+    } catch (error) {
+      if (generation === this.epoch && this.detailId === draft.item_id)
+        this.emitRecords({ error: message(error), notice: "" });
+      throw error;
+    } finally {
+      if (generation === this.epoch) this.emit({ busy: false });
+    }
+  };
   create = (item: LifeItem) =>
     this.write((repository) => repository.create(item));
   update = async (item: LifeItem, original: LifeItem) => {
