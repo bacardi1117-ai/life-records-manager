@@ -1,15 +1,14 @@
-# Notes Bridge 待確認契約
+# Notes Bridge v3.2 前端契約
 
-此文件是前端提出的 **建議契約**，不是已部署的 Apps Script API。Web App v3.1 已知功能未包含獨立 Notes action；正式建置的 `VITE_NOTES_API_ENABLED` 保持關閉。後端實作並確認欄位後，需核對此文件與 Adapter，才能開啟。
+前端沿用 life-records-v1 iframe + postMessage Bridge 與既有 Web App URL。此文件記錄目前依使用者提供的 Apps Script v3.2 契約所實作的前端欄位；正式 Google Sheets 讀寫仍需在有權限的登入環境另行驗證。
 
-Notes 工作表／唯讀回傳建議欄位：`note_id`、`item_id`、`note_date`（YYYY-MM-DD）、`text`（1–3000 字）、`status`（`active`／`archived`）、`created_at`、`updated_at`。`note_id` 由前端產生 UUID，後端須對同 ID 的重試去重；既有本機 `Note` 型別不直接寫入試算表。
+`Note` 的 `note_id`、`owner_type`、`owner_id`、`title`、`content`、`created_at`、`updated_at` 都是字串。`owner_type` 只允許 `item` 或 `plan`。
 
 | action | payload | 回傳 |
 | --- | --- | --- |
-| `getNotes` | `{ item_id }` | `CloudNote[]`，含封存資料 |
-| `getNote` | `{ note_id }` | `CloudNote \| null` |
-| `createNote` | `{ note_id, item_id, note_date, text }` | `{ success: true, note_id }` |
-| `updateNote` | `{ note_id, changes: { text } }` | `{ success: true, note_id }` |
-| `archiveNote` | `{ note_id }` | `{ success: true, note_id }` |
+| `getNotes` | `{ owner_type, owner_id }` | `Note[]` |
+| `getNote` | `{ note_id }` | `Note \| null` |
+| `createNote` | `{ note_id?, owner_type, owner_id, title, content }` | `{ success, duplicate, note }` |
+| `updateNote` | `{ note_id, changes: { title?, content? } }` | `{ success, note }` |
 
-前端僅由既有 iframe Bridge 呼叫以上 action；不新增 Web App URL，不直接存取 Sheets。讀取時嚴格核對 `item_id`，寫入時核對 `note_id`；失敗保留草稿與本機 Mock 紀錄，不顯示假成功。雲端新增備註的待送草稿放在獨立 sessionStorage 鍵，重試沿用同一 UUID。後端若使用其他欄位或 action 名稱，必須先修改 Adapter 與測試，再考慮啟用。
+雲端新增一定傳送前端產生的 UUID，重試沿用原 ID；在重新送出前用 `getNote` 查詢是否已寫入，`duplicate` 只接受回傳內容與草稿一致。新增或編輯成功後重新查詢該 owner 的清單，嚴格核對所屬 ID。前端不提供備註封存或實體刪除。Mock 備註與雲端 Notes 分離。

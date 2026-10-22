@@ -211,7 +211,7 @@ export default function Detail({
                           records.status === "ready"
                           ? records.rows.length
                           : "雲端"
-                        : "未同步"
+                        : t === "備註" ? notes.status === "unavailable" ? "未連接" : "雲端" : "未同步"
                     : t === "定期子項目"
                       ? item.tasks.length
                       : t === "歷史紀錄"
@@ -231,6 +231,7 @@ export default function Detail({
                 state={plans}
                 records={records}
                 calendarSync={calendarSync}
+                notes={notes}
                 busy={busy}
                 readOnly={readOnly}
               />
@@ -262,7 +263,8 @@ export default function Detail({
               </>
             ) : cloud && tab === "備註" ? (
               <CloudNotes
-                itemId={item.id}
+                ownerType="item"
+                ownerId={item.id}
                 store={store}
                 state={notes}
                 busy={busy}

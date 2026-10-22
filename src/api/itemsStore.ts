@@ -25,17 +25,20 @@ import type {
   CloudNote,
   CloudNotesRepository,
   NewCloudNote,
+  NoteOwnerType,
 } from "./cloudNotes";
 import { noteDrafts } from "./noteDrafts";
 export interface NotesSnapshot {
-  itemId: string | null;
+  ownerType: NoteOwnerType | null;
+  ownerId: string | null;
   status: "unavailable" | "idle" | "loading" | "ready" | "error";
   rows: CloudNote[];
   error: string;
   notice: string;
 }
 const emptyNotes = (enabled: boolean): NotesSnapshot => ({
-  itemId: null,
+  ownerType: null,
+  ownerId: null,
   status: enabled ? "idle" : "unavailable",
   rows: [],
   error: "",
@@ -495,170 +498,68 @@ export class ItemsStore {
   private emitNotes(patch: Partial<NotesSnapshot>) {
     this.emit({ notes: { ...this.state.notes, ...patch } });
   }
-  openNoteDraft = (itemId: string) => noteDrafts.open(itemId);
+  private noteOwnerValid(ownerType: NoteOwnerType, ownerId: string) {
+    return ownerType === "item"
+      ? this.detailId === ownerId
+      : this.state.plans.itemId === this.detailId &&
+        this.state.plans.rows.some(plan => plan.plan_id === ownerId && plan.item_id === this.detailId);
+  }
+  openNoteDraft = (ownerType: NoteOwnerType, ownerId: string) => noteDrafts.open(ownerType, ownerId);
   saveNoteDraft = (draft: NewCloudNote) => noteDrafts.save(draft);
-  loadNotes = async (itemId: string) => {
-    if (
-      !this.notesRepository?.enabled ||
-      this.state.mode !== "cloud" ||
-      this.state.status !== "ready" ||
-      this.detailId !== itemId
-    )
-      return;
-    const generation = this.epoch,
-      request = ++this.notesRequest;
-    this.emitNotes({
-      itemId,
-      status: "loading",
-      error: "",
-      notice: "",
-      rows: this.state.notes.itemId === itemId ? this.state.notes.rows : [],
-    });
+  loadNotes = async (ownerType: NoteOwnerType, ownerId: string) => {
+    if (!this.notesRepository?.enabled || this.state.mode !== "cloud" ||
+        this.state.status !== "ready" || !this.noteOwnerValid(ownerType, ownerId)) return;
+    const generation = this.epoch, request = ++this.notesRequest;
+    this.emitNotes({ ownerType, ownerId, status: "loading", error: "", notice: "", rows: [] });
     try {
-      const rows = await this.notesRepository.list(itemId);
-      if (
-        generation === this.epoch &&
-        request === this.notesRequest &&
-        this.detailId === itemId
-      )
+      const rows = await this.notesRepository.list(ownerType, ownerId);
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.noteOwnerValid(ownerType, ownerId) &&
+          this.state.notes.ownerType === ownerType && this.state.notes.ownerId === ownerId)
         this.emitNotes({ rows, status: "ready" });
     } catch (error) {
-      if (
-        generation === this.epoch &&
-        request === this.notesRequest &&
-        this.detailId === itemId
-      )
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.state.notes.ownerType === ownerType && this.state.notes.ownerId === ownerId)
         this.emitNotes({ status: "error", error: message(error) });
     }
   };
-  saveNote = async (
-    itemId: string,
-    noteId: string,
-    noteDate: string,
-    value: string,
-    original?: CloudNote,
-  ) => {
-    if (
-      !this.notesRepository?.enabled ||
-      this.state.mode !== "cloud" ||
-      this.state.status !== "ready" ||
-      this.state.stale ||
-      this.state.busy ||
-      this.detailId !== itemId ||
-      this.state.notes.status !== "ready" ||
-      this.state.notes.itemId !== itemId
-    )
+  saveNote = async (draft: NewCloudNote, original?: CloudNote) => {
+    if (!this.notesRepository?.enabled || this.state.mode !== "cloud" ||
+        this.state.status !== "ready" || this.state.stale || this.state.busy ||
+        !this.noteOwnerValid(draft.owner_type, draft.owner_id) ||
+        this.state.notes.status !== "ready" ||
+        this.state.notes.ownerType !== draft.owner_type || this.state.notes.ownerId !== draft.owner_id)
       throw new Error("雲端備註尚未就緒，請先重新讀取");
-    const repo = this.notesRepository,
-      generation = this.epoch,
-      request = ++this.notesRequest;
+    const repo = this.notesRepository, generation = this.epoch, request = ++this.notesRequest;
     this.emit({ busy: true });
     this.emitNotes({ error: "", notice: "" });
     try {
+      const expected = { ...draft, title: draft.title.trim(), content: draft.content.trim() };
       if (original) {
-        if (original.item_id !== itemId || original.note_id !== noteId)
-          throw new Error("備註所屬事項不符");
-        await repo.update(itemId, noteId, value);
+        if (original.note_id !== draft.note_id || original.owner_type !== draft.owner_type ||
+            original.owner_id !== draft.owner_id) throw new Error("備註所屬資料不符");
+        await repo.update(original, { title: expected.title, content: expected.content });
       } else {
-        const existing = await repo.get(noteId);
-        const draft: NewCloudNote = {
-          note_id: noteId,
-          item_id: itemId,
-          note_date: noteDate,
-          text: value,
-        };
+        // An ambiguous previous response may already have written this UUID.
+        const existing = await repo.get(draft.note_id);
         if (existing) {
-          if (
-            existing.item_id !== itemId ||
-            existing.text !== value.trim() ||
-            existing.note_date !== noteDate
-          )
+          if (existing.owner_type !== draft.owner_type || existing.owner_id !== draft.owner_id ||
+              existing.title !== expected.title || existing.content !== expected.content)
             throw new Error("相同備註識別碼已有不同內容，已停止重試");
         } else await repo.create(draft);
       }
-      const rows = await repo.list(itemId);
-      if (
-        !rows.some(
-          (row) =>
-            row.note_id === noteId &&
-            row.item_id === itemId &&
-            row.text === value.trim() &&
-            row.status === "active",
-        )
-      )
+      const rows = await repo.list(draft.owner_type, draft.owner_id);
+      if (!rows.some(row => row.note_id === draft.note_id && row.owner_type === draft.owner_type &&
+          row.owner_id === draft.owner_id && row.title === expected.title && row.content === expected.content))
         throw new Error("寫入已確認，但備註清單尚未更新；請重新讀取核對");
-      if (
-        generation === this.epoch &&
-        request === this.notesRequest &&
-        this.detailId === itemId
-      )
-        this.emitNotes({
-          rows,
-          status: "ready",
-          notice: "備註已重新讀取雲端資料。",
-        });
-      if (!original)
-        noteDrafts.clear({
-          note_id: noteId,
-          item_id: itemId,
-          note_date: noteDate,
-          text: value,
-        });
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.noteOwnerValid(draft.owner_type, draft.owner_id) &&
+          this.state.notes.ownerType === draft.owner_type && this.state.notes.ownerId === draft.owner_id)
+        this.emitNotes({ rows, status: "ready", notice: "備註已重新讀取雲端資料。" });
+      if (!original) noteDrafts.clear(draft);
     } catch (error) {
-      if (
-        generation === this.epoch &&
-        request === this.notesRequest &&
-        this.detailId === itemId
-      )
-        this.emitNotes({ status: "error", error: message(error) });
-      throw error;
-    } finally {
-      if (generation === this.epoch) this.emit({ busy: false });
-    }
-  };
-  archiveNote = async (itemId: string, noteId: string) => {
-    if (
-      !this.notesRepository?.enabled ||
-      this.state.mode !== "cloud" ||
-      this.state.status !== "ready" ||
-      this.state.stale ||
-      this.state.busy ||
-      this.detailId !== itemId ||
-      this.state.notes.status !== "ready"
-    )
-      throw new Error("雲端備註尚未就緒，請先重新讀取");
-    const generation = this.epoch,
-      request = ++this.notesRequest;
-    this.emit({ busy: true });
-    try {
-      await this.notesRepository.archive(itemId, noteId);
-      const rows = await this.notesRepository.list(itemId);
-      if (
-        !rows.some(
-          (row) =>
-            row.note_id === noteId &&
-            row.item_id === itemId &&
-            row.status === "archived",
-        )
-      )
-        throw new Error("封存已回應，但備註清單尚未更新；請重新讀取核對");
-      if (
-        generation === this.epoch &&
-        request === this.notesRequest &&
-        this.detailId === itemId
-      )
-        this.emitNotes({
-          rows,
-          status: "ready",
-          error: "",
-          notice: "備註已封存。",
-        });
-    } catch (error) {
-      if (
-        generation === this.epoch &&
-        request === this.notesRequest &&
-        this.detailId === itemId
-      )
+      if (generation === this.epoch && request === this.notesRequest &&
+          this.state.notes.ownerType === draft.owner_type && this.state.notes.ownerId === draft.owner_id)
         this.emitNotes({ status: "error", error: message(error) });
       throw error;
     } finally {

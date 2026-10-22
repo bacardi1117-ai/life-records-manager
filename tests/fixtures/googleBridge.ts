@@ -183,60 +183,38 @@ export async function mockGoogleBridge(page: Page) {
     switch (data.action) {
       case "getNotes":
         if (state.failNoteReads) error = "模擬備註讀取失敗";
-        else
-          result = state.notes.filter(
-            (note) => note.item_id === data.payload.item_id,
-          );
+        else result = state.notes.filter(note => note.owner_type === data.payload.owner_type && note.owner_id === data.payload.owner_id);
         break;
       case "getNote":
         if (state.failNoteReads) error = "模擬備註讀取失敗";
-        else
-          result =
-            state.notes.find((note) => note.note_id === data.payload.note_id) ??
-            null;
+        else result = state.notes.find(note => note.note_id === data.payload.note_id) ?? null;
         break;
-      case "createNote":
+      case "createNote": {
         if (state.failNoteWrites) error = "模擬備註寫入失敗";
         else {
-          const exists = state.notes.find(
-            (note) => note.note_id === data.payload.note_id,
-          );
-          if (exists) error = "備註識別碼已存在";
+          const exists = state.notes.find(note => note.note_id === data.payload.note_id);
+          if (exists && (exists.owner_type !== data.payload.owner_type || exists.owner_id !== data.payload.owner_id ||
+              exists.title !== data.payload.title || exists.content !== data.payload.content))
+            error = "備註識別碼資料衝突";
           else {
-            state.notes.push({
-              note_id: data.payload.note_id,
-              item_id: data.payload.item_id,
-              note_date: data.payload.note_date,
-              text: data.payload.text,
-              status: "active",
-              created_at: "2026-10-22 12:00:00",
-              updated_at: "2026-10-22 12:00:00",
-            });
-            result = { success: true, note_id: data.payload.note_id };
+            const note: CloudNote = exists ?? {
+              note_id: data.payload.note_id, owner_type: data.payload.owner_type, owner_id: data.payload.owner_id,
+              title: data.payload.title, content: data.payload.content,
+              created_at: "2026-10-22 12:00:00", updated_at: "2026-10-22 12:00:00",
+            };
+            if (!exists) state.notes.push(note);
+            result = { success: true, duplicate: Boolean(exists), note };
           }
         }
         break;
-      case "updateNote": {
-        const note = state.notes.find(
-          (row) => row.note_id === data.payload.note_id,
-        );
-        if (state.failNoteWrites) error = "模擬備註寫入失敗";
-        else if (!note) error = "找不到備註";
-        else {
-          note.text = data.payload.changes.text;
-          result = { success: true, note_id: note.note_id };
-        }
-        break;
       }
-      case "archiveNote": {
-        const note = state.notes.find(
-          (row) => row.note_id === data.payload.note_id,
-        );
+      case "updateNote": {
+        const note = state.notes.find(row => row.note_id === data.payload.note_id);
         if (state.failNoteWrites) error = "模擬備註寫入失敗";
         else if (!note) error = "找不到備註";
         else {
-          note.status = "archived";
-          result = { success: true, note_id: note.note_id };
+          Object.assign(note, data.payload.changes);
+          result = { success: true, note };
         }
         break;
       }

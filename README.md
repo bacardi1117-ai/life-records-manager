@@ -2,7 +2,7 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
-目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；備註與照片尚未支援雲端同步；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
+目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；照片尚未支援雲端同步；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -136,7 +136,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、獨立備註、照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 亦未串接。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 亦未串接。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -214,7 +214,7 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 
 ## Google Sheets 保養完成紀錄（Web App v3.0）
 
-雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片、網站手動日曆同步、獨立 Notes 同步與完成紀錄刪除／更正目前不可用。
+雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片、網站手動日曆同步與完成紀錄刪除／更正目前不可用。
 
 Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintenanceRecord`、`getMaintenanceRecordsByItem` 四個 action。建立 payload 僅含 `record_id`、`plan_id`、`completed_date`、`title`、`amount`、`vendor`、`description`，不由前端修改計畫的最近完成日或下次保養日。成功（包含 `duplicate: true`）後重新讀取該事項計畫及事項／子計畫完成紀錄，詳細頁使用後端回傳的日期及金額；首頁現有統計僅包含事項數、事項金額與封存數，沒有跨事項保養費用欄位。雲端歷史按完成日期由新到舊，支援展開完整備註，並按 item_id／plan_id 隔離。
 
@@ -234,8 +234,8 @@ API 回傳 `{ plan_id, sync_status, last_synced_at, error_message, has_event }`�
 
 `npm test`、`npm run build` 與 `npm run test:e2e` 預設測試已啟用的前端。測試只使用合成 Bridge，未驗證正式 Web App v3.1、CalendarSync 工作表或私人排程。若要測試關閉旗標，可先以 `VITE_CALENDAR_SYNC_STATUS_API_ENABLED=false npm run build` 建置，再執行 `CALENDAR_SYNC_E2E_ENABLED=false npm run test:e2e -- tests/e2e/calendar.spec.ts`；完成後用一般 `npm run build` 恢復正式啟用產物。
 
-## 雲端備註準備階段
+## 雲端備註（Web App v3.2）
 
-原本詳細頁的「備註」分頁已預留獨立 Notes Adapter、資料來源隔離及新增／編輯／封存介面。**目前後端 Notes Bridge action 未確認，正式建置預設停用**：雲端分頁顯示「備註雲端 API 尚未連接」，不發出 Notes 請求，也不會將本機 Mock 備註當成雲端紀錄。待確認的 action、資料欄位及去重要求記錄在 `docs/notes-bridge-contract.md`；後端部署前不可將 `VITE_NOTES_API_ENABLED` 設為 true。
+生活事項的「備註」分頁及定期子項目卡片的「查看備註」沿用現有 Notes Adapter 與 iframe Bridge。雲端模式預設啟用 `getNotes`、`getNote`、`createNote`、`updateNote`；沿用目前 Web App URL，不另行設定。新增前端產生 UUID，未確認的重試保留同一 ID，先查詢原 ID；成功後重新讀取該 owner 的清單。編輯僅能改標題與內容；不提供實體刪除或封存。Mock 模式仍使用原本本機備註，不會自動轉存。
 
-開發者可在攔截全部 Google 請求的模擬環境測試：`VITE_NOTES_API_ENABLED=true npm run build` 後執行 `NOTES_E2E_ENABLED=true npm run test:e2e -- tests/e2e/cloudNotes.spec.ts`。測試完成後再執行一般 `npm run build`，恢復正式停用的產物。這些測試不代表 Notes 工作表已建立或實際同步成功。
+此版以前端提供的 v3.2 契約開發，模擬測試不代表正式 Web App 或 Notes 工作表已完成實際讀寫驗證。若部署端尚未提供 Notes action，可在建置時設定 `VITE_NOTES_API_ENABLED=false` 暫時顯示未連接狀態。契約細節見 `docs/notes-bridge-contract.md`。
