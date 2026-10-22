@@ -70,7 +70,9 @@ beforeEach(async () => {
       throw new Error(`unexpected ${action}`);
     },
   );
-  store = new ItemsStore(() => document.createElement("div"));
+  store = new ItemsStore(() => document.createElement("div"), {
+    calendarSyncStatusApiEnabled: false,
+  });
   await store.start();
   await store.openItem(sampleItem.item_id);
   await store.loadPlans(sampleItem.item_id);

@@ -48,7 +48,7 @@
 
 ## Google Calendar 同步狀態
 
-- 私人日曆同步 Apps Script 不公開為 Web App；前端只能透過既有 Bridge 的未來唯讀 `getCalendarSyncStatus({ plan_id })` 取得摘要，不讀取或顯示 calendar_id、event_id、授權資訊。
-- 目前後端 action 尚未建立。`VITE_CALENDAR_SYNC_STATUS_API_ENABLED` 預設關閉，關閉時 Repository 不得發出請求，介面顯示「同步狀態尚未連接」。只能在後端已上線並驗證後於建置時啟用。
+- 私人日曆同步 Apps Script 不公開為 Web App；前端只能透過既有 Bridge 的唯讀 `getCalendarSyncStatus({ plan_id })` 取得摘要，不讀取或顯示 calendar_id、event_id、授權資訊。
+- Web App v3.1 已提供 action，`VITE_CALENDAR_SYNC_STATUS_API_ENABLED` 預設啟用；明確設為 false 時不得發出請求。無時區時間依台北 UTC+08:00 解讀，ISO 時間依明確 offset，禁止直接比較不同時區字串。
 - 同步狀態按 item_id 與 plan_id 隔離；切換事項、重新讀取計畫、計畫寫入或完成保養後清理舊狀態並重新讀取。讀取錯誤或計畫更新時間晚於上次同步時間時不得顯示「已同步」。
-- 私人 Apps Script 每 15 分鐘定期檢查，並非即時同步；目前首次自動觸發尚待實際驗證。前端不提供日曆寫入或手動同步。
+- 私人 Apps Script 每 15 分鐘定期檢查，並非即時同步；介面僅表示 CalendarSync 紀錄，不能宣稱即時查證事件。前端不提供日曆寫入或手動同步。

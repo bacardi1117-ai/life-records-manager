@@ -1,5 +1,6 @@
 import type { AppsScriptBridge } from "./appsScriptBridge";
 import type { MaintenancePlan } from "./maintenancePlans";
+import { calendarTimestamp } from "../lib/calendarTimestamps";
 
 /** CalendarSync worksheet shape. IDs and authorization details stay in the backend. */
 export interface CalendarSyncRow {
@@ -13,7 +14,7 @@ export interface CalendarSyncRow {
   updated_at: string;
 }
 
-/** The only fields exposed by the future read-only Bridge action. */
+/** The only fields exposed by the Web App v3.1 read-only Bridge action. */
 export interface CalendarSyncStatus {
   plan_id: string;
   sync_status: string;
@@ -22,9 +23,9 @@ export interface CalendarSyncStatus {
   has_event: boolean;
 }
 
-// The deployed Web App does not yet implement this action. Opt in only after it does.
+// Web App v3.1 supports this action. Keep an explicit opt-out for older deployments.
 export const CALENDAR_SYNC_STATUS_API_ENABLED =
-  import.meta.env.VITE_CALENDAR_SYNC_STATUS_API_ENABLED === "true";
+  import.meta.env.VITE_CALENDAR_SYNC_STATUS_API_ENABLED !== "false";
 
 export function parseCalendarSyncStatus(
   value: unknown,
@@ -55,16 +56,27 @@ export function isConfirmedCalendarSync(
   plan: MaintenancePlan,
   status: CalendarSyncStatus,
 ): boolean {
-  const sheetTimestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
-  return (
-    plan.enabled &&
+  return calendarSyncLabel(plan, status) === "Google Calendar 已同步紀錄";
+}
+
+export function calendarSyncLabel(
+  plan: MaintenancePlan,
+  status: CalendarSyncStatus,
+): string {
+  if (status.sync_status === "error") return "同步失敗";
+  if (status.sync_status === "disabled") return "提醒已停用";
+  if (status.sync_status === "not_synced") return "尚未同步";
+  if (status.sync_status !== "synced") return "無法確認";
+  const updated = calendarTimestamp(plan.updated_at);
+  const synced = calendarTimestamp(status.last_synced_at);
+  if (updated === null || synced === null) return "無法確認";
+  if (synced < updated) return "等待下次同步";
+  return plan.enabled &&
     status.sync_status === "synced" &&
     status.has_event &&
-    !status.error_message &&
-    sheetTimestamp.test(plan.updated_at) &&
-    sheetTimestamp.test(status.last_synced_at) &&
-    status.last_synced_at >= plan.updated_at
-  );
+    !status.error_message
+    ? "Google Calendar 已同步紀錄"
+    : "無法確認";
 }
 
 export function createCalendarSyncRepository(

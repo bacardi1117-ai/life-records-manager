@@ -186,7 +186,7 @@ export async function mockGoogleBridge(page: Page) {
         else
           result = state.calendarStatuses[data.payload.plan_id] ?? {
             plan_id: data.payload.plan_id,
-            sync_status: "pending",
+            sync_status: "not_synced",
             last_synced_at: "",
             error_message: "",
             has_event: false,

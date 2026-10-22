@@ -79,9 +79,24 @@ test("existing tab loads parent plans, creates, edits, disables, enables and sur
   ]) {
     await row(page).getByRole("button", { name: action, exact: true }).click();
     await expect(row(page)).toContainText(text);
-    expect(state.calls.at(-1)?.action).toBe("getMaintenancePlans");
+    expect(
+      state.calls
+        .filter((call) => call.action !== "getCalendarSyncStatus")
+        .at(-1)?.action,
+    ).toBe("getMaintenancePlans");
   }
+  const calendarReads = state.calls.filter(
+    (call) => call.action === "getCalendarSyncStatus",
+  ).length;
+  expect(calendarReads).toBeGreaterThanOrEqual(5);
   await page.reload();
+  await expect
+    .poll(
+      () =>
+        state.calls.filter((call) => call.action === "getCalendarSyncStatus")
+          .length,
+    )
+    .toBeGreaterThan(calendarReads);
   await expect(row(page)).toContainText("每 12 月");
   await expect(row(page, "雲端更換濾芯")).toContainText("提前 14 天提醒");
   expect(

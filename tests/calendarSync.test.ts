@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createCalendarSyncRepository,
+  calendarSyncLabel,
   isConfirmedCalendarSync,
   parseCalendarSyncStatus,
 } from "../src/api/calendarSync";
@@ -71,3 +72,27 @@ describe("read-only calendar status adapter", () => {
     ).toBe(false);
   });
 });
+
+it.each([
+  ["2026-10-22 12:00:00", "2026-10-22T04:00:00Z", "Google Calendar 已同步紀錄"],
+  ["2026-10-22T04:00:00Z", "2026-10-22 12:00:00", "Google Calendar 已同步紀錄"],
+  ["2026-10-22 12:00:01", "2026-10-22T04:00:00Z", "等待下次同步"],
+  ["2026-10-22T04:00:01+00:00", "2026-10-22T12:00:00+08:00", "等待下次同步"],
+  ["2026-10-22 00:00:00", "2026-10-21T16:00:00Z", "Google Calendar 已同步紀錄"],
+  ["2026-02-30 12:00:00", "2026-10-22 12:00:00", "無法確認"],
+  ["invalid", "2026-10-22 12:00:00", "無法確認"],
+  ["2026-10-22 12:00:00", "", "無法確認"],
+])(
+  "compares Taipei and offset timestamps: %s / %s",
+  (updated, lastSynced, expected) => {
+    expect(
+      calendarSyncLabel(
+        { ...samplePlan, updated_at: updated },
+        {
+          ...synced,
+          last_synced_at: lastSynced,
+        },
+      ),
+    ).toBe(expected);
+  },
+);

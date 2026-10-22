@@ -339,7 +339,9 @@ function MaintenancePlanForm({
           defaultValue={initial?.reminder_days ?? 7}
         />
       </label>
-      <p className="muted small">下次保養日由後端計算；提醒通知尚未串接。</p>
+      <p className="muted small">
+        下次保養日由後端計算；日曆提醒由私人 Apps Script 定期處理。
+      </p>
       {recover && (
         <button
           type="button"

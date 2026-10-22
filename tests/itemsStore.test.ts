@@ -28,7 +28,9 @@ let store: ItemsStore;
 beforeEach(() => {
   localStorage.clear();
   vi.spyOn(AppsScriptBridge.prototype, "connect").mockResolvedValue();
-  store = new ItemsStore(() => document.createElement("div"));
+  store = new ItemsStore(() => document.createElement("div"), {
+    calendarSyncStatusApiEnabled: false,
+  });
 });
 afterEach(() => {
   store.dispose();
