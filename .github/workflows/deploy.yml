@@ -25,6 +25,7 @@ jobs:
         env:
           VITE_CALENDAR_SYNC_STATUS_API_ENABLED: "true"
           VITE_NOTES_API_ENABLED: "true"
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

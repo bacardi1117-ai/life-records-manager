@@ -136,7 +136,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 亦未串接。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 已加入授權與基本連線檢查，尚未上傳附件。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -239,3 +239,11 @@ API 回傳 `{ plan_id, sync_status, last_synced_at, error_message, has_event }`�
 生活事項的「備註」分頁及定期子項目卡片的「查看備註」沿用現有 Notes Adapter 與 iframe Bridge。雲端模式預設啟用 `getNotes`、`getNote`、`createNote`、`updateNote`；沿用目前 Web App URL，不另行設定。新增前端產生 UUID，未確認的重試保留同一 ID，先查詢原 ID；成功後重新讀取該 owner 的清單。編輯僅能改標題與內容；不提供實體刪除或封存。Mock 模式仍使用原本本機備註，不會自動轉存。
 
 此版以前端提供的 v3.2 契約開發，模擬測試不代表正式 Web App 或 Notes 工作表已完成實際讀寫驗證。若部署端尚未提供 Notes action，可在建置時設定 `VITE_NOTES_API_ENABLED=false` 暫時顯示未連接狀態。契約細節見 `docs/notes-bridge-contract.md`。
+
+## 私人 Google Drive 授權（第一階段）
+
+GitHub Actions 的 Repository Variable `VITE_GOOGLE_CLIENT_ID` 會在 Pages 的 `npm run build` 階段注入。此 Client ID 是網頁應用程式的公開識別碼，不是 Client Secret。未設定時，雲端模式的「照片」分頁顯示「Google Drive 尚未設定」，不嘗試授權。
+
+正式網站中，先使用已有的 Google Sheets 連線開啟一筆生活事項，切到「照片」，按「連接私人 Google Drive」，使用已列為 OAuth 測試使用者的 Google 帳號完成授權。網站只請求 `https://www.googleapis.com/auth/drive.file`，取得 Access Token 後呼叫 Drive API 的唯讀清單端點檢查基本連線。授權及驗證成功才顯示「Google Drive 已授權」。可在同一區塊取消授權；Token 到期、授權視窗取消或 API 拒絕時會顯示錯誤並可重新授權。Token 僅在目前網頁的記憶體中，重新整理後需重新授權。
+
+此階段不使用 Apps Script Bridge 操作 Drive，也不提供檔案上傳、刪除、分享或公開連結；Mock 照片繼續存在原本的本機資料來源。模擬 GIS／Drive API 測試不代表正式 Google 帳號授權已驗證。

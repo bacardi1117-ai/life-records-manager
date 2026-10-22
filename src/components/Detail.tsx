@@ -26,6 +26,7 @@ import type {
   NotesSnapshot,
 } from "../api/itemsStore";
 import CloudNotes from "./CloudNotes";
+import DriveConnection from "./DriveConnection";
 import { totalMaintenanceAmount } from "../api/maintenanceRecords";
 import { CloudHistoryList } from "./CloudMaintenanceRecords";
 function Gallery({ photos }: { photos: Photo[] }) {
@@ -270,6 +271,8 @@ export default function Detail({
                 busy={busy}
                 readOnly={readOnly}
               />
+            ) : cloud && tab === "照片" ? (
+              <DriveConnection />
             ) : cloud ? (
               <div className="empty">
                 <h2>{tab}尚未支援雲端同步</h2>
