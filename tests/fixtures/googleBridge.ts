@@ -41,6 +41,7 @@ export async function mockGoogleBridge(page: Page) {
     plans: [structuredClone(samplePlan)],
     failPlanReads: false,
     failPlanWrites: false,
+    undefinedPlanAction: "",
     failPlanReadback: false,
     losePlanResponse: false,
     planDelay: {} as Record<string, number>,
@@ -121,6 +122,16 @@ export async function mockGoogleBridge(page: Page) {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ ok: false, error: "模擬保養寫入失敗" }),
+      });
+      return;
+    }
+    if (data.action === state.undefinedPlanAction) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: false,
+          error: `ReferenceError: ${data.action} is not defined`,
+        }),
       });
       return;
     }

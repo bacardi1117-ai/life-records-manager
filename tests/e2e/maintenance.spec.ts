@@ -148,6 +148,47 @@ test("failed writes retain draft, block resubmission until read recovery and emi
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(row(page, "保留的草稿")).toBeVisible();
 });
+test("a remote update ReferenceError keeps the same plan and the unsaved edit", async ({
+  page,
+}) => {
+  const state = await mockGoogleBridge(page);
+  state.undefinedPlanAction = "updateMaintenancePlan";
+  await open(page);
+  await row(page)
+    .getByRole("button", { name: `編輯${samplePlan.name}` })
+    .click();
+  await page.getByLabel("週期數值", { exact: true }).fill("12");
+  await save(page).click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText(
+    "Apps Script 的 updateMaintenancePlan 回報：ReferenceError: updateMaintenancePlan is not defined",
+  );
+  await expect(page.getByLabel("週期數值", { exact: true })).toHaveValue("12");
+  await expect(save(page)).toBeDisabled();
+  expect(state.plans).toEqual([samplePlan]);
+  const updates = state.calls.filter(
+    (call) => call.action === "updateMaintenancePlan",
+  );
+  expect(updates).toHaveLength(1);
+  expect(updates[0].payload).toEqual({
+    plan_id: samplePlan.plan_id,
+    changes: { interval_value: 12 },
+  });
+  expect(
+    state.calls.some((call) => call.action === "createMaintenancePlan"),
+  ).toBe(false);
+  await expect(
+    page.getByText("保養計畫已儲存至 Google Sheets，並重新讀取。", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  state.undefinedPlanAction = "";
+  await page.getByRole("button", { name: "重新讀取計畫並保留草稿" }).click();
+  await expect(page.getByLabel("週期數值", { exact: true })).toHaveValue("12");
+  await save(page).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row(page)).toContainText("2028-02-29");
+  expect(state.plans).toHaveLength(1);
+});
 test("read failure does not silently show an empty list or switch to Mock", async ({
   page,
 }) => {

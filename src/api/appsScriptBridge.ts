@@ -45,6 +45,7 @@ export function isGoogleBridgeOrigin(origin: string): boolean {
   );
 }
 interface Pending {
+  action: BridgeAction;
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -141,12 +142,23 @@ export class AppsScriptBridge {
     clearTimeout(request.timer);
     this.pending.delete(data.id);
     if (data.ok) request.resolve(data.result);
-    else
+    else {
+      const detail =
+        typeof data.error === "string" ? data.error : "Apps Script 操作失敗";
+      // This error comes from the pinned iframe response, not from a missing
+      // function in the React bundle. Keep the action for precise diagnosis.
+      const referenceError =
+        /\bReferenceError:\s*(?:bridge)?(?:update|disable|enable)MaintenancePlan is not defined\b/.test(
+          detail,
+        );
       request.reject(
         new Error(
-          typeof data.error === "string" ? data.error : "Apps Script 操作失敗",
+          referenceError
+            ? `Apps Script 的 ${request.action} 回報：${detail}。請檢查目前部署版本的 Bridge 與伺服端函式；寫入結果尚未確認，請先重新讀取核對。`
+            : detail,
         ),
       );
+    }
   };
   request(action: BridgeAction, payload: unknown = {}): Promise<unknown> {
     if (!BRIDGE_ACTIONS.includes(action))
@@ -163,7 +175,7 @@ export class AppsScriptBridge {
           ),
         );
       }, this.options.requestTimeoutMs ?? 20000);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { action, resolve, reject, timer });
       try {
         this.target!.postMessage(
           {
