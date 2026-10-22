@@ -17,6 +17,8 @@ import type {
 } from "../models";
 import { daysUntil, dueLabel, money, nextDue, today } from "../lib/dates";
 import { CompleteForm, ItemForm, Modal, PhotoInput, TaskForm } from "./Forms";
+import CloudMaintenancePlans from "./CloudMaintenancePlans";
+import type { ItemsStore, PlansSnapshot } from "../api/itemsStore";
 function Gallery({ photos }: { photos: Photo[] }) {
   return (
     <div className="gallery">
@@ -37,6 +39,8 @@ function Gallery({ photos }: { photos: Photo[] }) {
 }
 export default function Detail({
   item,
+  store,
+  plans,
   save,
   complete,
   busy,
@@ -47,6 +51,8 @@ export default function Detail({
   setArchived,
   recover,
 }: {
+  store: ItemsStore;
+  plans: PlansSnapshot;
   cloud?: boolean;
   readOnly?: boolean;
   update: (item: LifeItem, original: LifeItem) => Promise<void>;
@@ -165,7 +171,9 @@ export default function Detail({
                 {t}
                 <span>
                   {cloud
-                    ? "未同步"
+                    ? t === "定期子項目"
+                      ? "雲端"
+                      : "未同步"
                     : t === "定期子項目"
                       ? item.tasks.length
                       : t === "歷史紀錄"
@@ -178,12 +186,20 @@ export default function Detail({
             ))}
           </div>
           <div className="panel tab-panel" role="tabpanel" aria-label={tab}>
-            {cloud ? (
+            {cloud && tab === "定期子項目" ? (
+              <CloudMaintenancePlans
+                item={item}
+                store={store}
+                state={plans}
+                busy={busy}
+                readOnly={readOnly}
+              />
+            ) : cloud ? (
               <div className="empty">
                 <h2>{tab}尚未支援雲端同步</h2>
                 <p>
-                  目前雲端僅支援 Items 基本資料，此處不會讀取或寫入本機 Mock
-                  紀錄。
+                  目前雲端支援 Items 基本資料及保養計畫，此處不會讀取或寫入本機
+                  Mock 紀錄。
                 </p>
               </div>
             ) : (

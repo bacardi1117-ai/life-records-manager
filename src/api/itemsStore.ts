@@ -4,7 +4,28 @@ import { connectionSettings } from "./connectionSettings";
 import { createSheetsItemsApi } from "./sheetsItems";
 import { cloudRepository, mockRepository } from "./itemsRepository";
 import type { ItemsRepository, WriteResult } from "./itemsRepository";
+import { createMaintenancePlansRepository } from "./maintenancePlans";
+import type {
+  MaintenancePlan,
+  MaintenancePlanFields,
+  MaintenancePlansRepository,
+} from "./maintenancePlans";
+export interface PlansSnapshot {
+  itemId: string | null;
+  rows: MaintenancePlan[];
+  status: "idle" | "loading" | "ready" | "error";
+  error: string;
+  notice: string;
+}
+const emptyPlans = (): PlansSnapshot => ({
+  itemId: null,
+  rows: [],
+  status: "idle",
+  error: "",
+  notice: "",
+});
 interface Snapshot {
+  plans: PlansSnapshot;
   mode: DataSource | null;
   url: string;
   status: "loading" | "connecting" | "ready" | "error" | "disconnected";
@@ -20,6 +41,7 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : "資料操作失敗";
 export class ItemsStore {
   private state: Snapshot = {
+    plans: emptyPlans(),
     mode: null,
     url: "",
     status: "loading",
@@ -34,6 +56,8 @@ export class ItemsStore {
   private listeners = new Set<() => void>();
   private repository: ItemsRepository | null = null;
   private bridge: AppsScriptBridge | null = null;
+  private plansRepository: MaintenancePlansRepository | null = null;
+  private planRequest = 0;
   private epoch = 0;
   private detailRequest = 0;
   private detailId: string | null = null;
@@ -53,8 +77,11 @@ export class ItemsStore {
     this.bridge?.dispose();
     this.bridge = null;
     this.repository = null;
+    this.plansRepository = null;
+    this.planRequest++;
     this.detailId = null;
     this.emit({
+      plans: emptyPlans(),
       mode,
       status,
       items: [],
@@ -111,6 +138,7 @@ export class ItemsStore {
       if (generation !== this.epoch) return;
       connectionSettings.save(url);
       this.repository = repository;
+      this.plansRepository = createMaintenancePlansRepository(bridge);
       this.emit({
         items,
         status: "ready",
@@ -122,6 +150,8 @@ export class ItemsStore {
       this.bridge?.dispose();
       this.bridge = null;
       this.repository = null;
+      this.plansRepository = null;
+      this.planRequest++;
       this.emit({ status: "error", stale: true, error: message(error) });
     }
   };
@@ -166,6 +196,8 @@ export class ItemsStore {
     this.bridge?.dispose();
     this.bridge = null;
     this.repository = null;
+    this.plansRepository = null;
+    this.planRequest++;
     this.emit({
       status: "disconnected",
       stale: true,
@@ -180,6 +212,8 @@ export class ItemsStore {
     this.bridge?.dispose();
     this.bridge = null;
     this.repository = null;
+    this.plansRepository = null;
+    this.planRequest++;
   };
   private upsert(item: LifeItem, items = this.state.items) {
     return items.some((i) => i.id === item.id)
@@ -190,6 +224,8 @@ export class ItemsStore {
     const generation = this.epoch,
       request = ++this.detailRequest;
     this.detailId = id;
+    this.planRequest++;
+    this.emit({ plans: emptyPlans() });
     if (!this.repository || this.state.status !== "ready") return;
     this.emit({
       selected: null,
@@ -219,7 +255,8 @@ export class ItemsStore {
   closeItem = () => {
     this.detailRequest++;
     this.detailId = null;
-    this.emit({ selected: null, detailState: "idle" });
+    this.planRequest++;
+    this.emit({ selected: null, detailState: "idle", plans: emptyPlans() });
   };
   refresh = async () => {
     if (!this.repository || this.state.busy) return;
@@ -289,6 +326,108 @@ export class ItemsStore {
       if (generation === this.epoch) this.emit({ busy: false });
     }
   }
+  private emitPlans(patch: Partial<PlansSnapshot>) {
+    this.emit({ plans: { ...this.state.plans, ...patch } });
+  }
+  loadPlans = async (itemId: string) => {
+    if (
+      !this.plansRepository ||
+      this.state.mode !== "cloud" ||
+      this.state.status !== "ready" ||
+      this.state.busy ||
+      this.detailId !== itemId
+    )
+      return;
+    const generation = this.epoch,
+      request = ++this.planRequest;
+    this.emitPlans({
+      itemId,
+      status: "loading",
+      error: "",
+      notice: "",
+      rows: this.state.plans.itemId === itemId ? this.state.plans.rows : [],
+    });
+    try {
+      const rows = await this.plansRepository.list(itemId);
+      if (
+        generation === this.epoch &&
+        request === this.planRequest &&
+        this.detailId === itemId
+      )
+        this.emitPlans({ rows, status: "ready" });
+    } catch (error) {
+      if (
+        generation === this.epoch &&
+        request === this.planRequest &&
+        this.detailId === itemId
+      )
+        this.emitPlans({ status: "error", error: message(error) });
+    }
+  };
+  private async writePlan(
+    itemId: string,
+    action: (repository: MaintenancePlansRepository) => Promise<void>,
+  ) {
+    if (
+      !this.plansRepository ||
+      this.state.mode !== "cloud" ||
+      this.state.status !== "ready" ||
+      this.state.stale ||
+      this.state.busy ||
+      this.detailId !== itemId ||
+      this.state.plans.itemId !== itemId ||
+      this.state.plans.status !== "ready"
+    )
+      throw new Error("保養資料尚未就緒，請先重新讀取");
+    const repository = this.plansRepository,
+      generation = this.epoch,
+      request = ++this.planRequest;
+    const current = () =>
+      generation === this.epoch &&
+      request === this.planRequest &&
+      this.detailId === itemId;
+    this.emit({ busy: true, notice: "" });
+    this.emitPlans({ error: "", notice: "" });
+    try {
+      await action(repository);
+      // An acknowledged write must not be retried merely because its readback failed.
+      try {
+        const rows = await repository.list(itemId);
+        if (current())
+          this.emitPlans({
+            rows,
+            status: "ready",
+            notice: "保養計畫已儲存至 Google Sheets，並重新讀取。",
+          });
+      } catch {
+        if (current())
+          this.emitPlans({
+            status: "error",
+            error:
+              "保養計畫寫入已確認，但重新讀取失敗；請重新讀取核對，不要重複新增。",
+          });
+      }
+    } catch (error) {
+      if (current()) this.emitPlans({ status: "error", error: message(error) });
+      throw error;
+    } finally {
+      if (generation === this.epoch) this.emit({ busy: false });
+    }
+  }
+  savePlan = (
+    itemId: string,
+    fields: MaintenancePlanFields,
+    original?: MaintenancePlan,
+  ) =>
+    this.writePlan(itemId, (repository) =>
+      original
+        ? repository.update(itemId, original, fields)
+        : repository.create(itemId, fields),
+    );
+  setPlanEnabled = (itemId: string, planId: string, enabled: boolean) =>
+    this.writePlan(itemId, (repository) =>
+      repository.setEnabled(itemId, planId, enabled),
+    );
   create = (item: LifeItem) =>
     this.write((repository) => repository.create(item));
   update = async (item: LifeItem, original: LifeItem) => {

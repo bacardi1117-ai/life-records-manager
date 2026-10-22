@@ -89,7 +89,7 @@ export default function App() {
               <div className="source-toolbar">
                 <span>
                   {state.status === "ready" && !state.stale
-                    ? "Items 已連線；保養、歷史、備註及照片尚未支援雲端同步。"
+                    ? "Items 與保養計畫使用雲端；完成紀錄、備註及照片尚未支援雲端同步。"
                     : "雲端資料尚未就緒，已停止寫入；不會自動回退為 Mock。"}
                 </span>
                 <a href="#/settings" className="text-button">
@@ -134,6 +134,8 @@ export default function App() {
                 <Detail
                   key={`${state.mode}:${itemId}`}
                   item={state.selected}
+                  store={store}
+                  plans={state.plans}
                   cloud={cloud}
                   busy={state.busy}
                   readOnly={!writable}

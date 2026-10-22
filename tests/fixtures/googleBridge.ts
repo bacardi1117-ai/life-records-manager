@@ -1,3 +1,4 @@
+import type { MaintenancePlan } from "../../src/api/maintenancePlans";
 import type { Page } from "@playwright/test";
 // Synthetic deployment; every request is fulfilled by Playwright, never Google.
 export const TEST_WEB_APP = new URL(
@@ -19,9 +20,31 @@ export const sampleItem = {
   created_at: "2026-10-21 21:55:53",
   updated_at: "2026-10-21 21:55:53",
 };
+export const samplePlan: MaintenancePlan = {
+  plan_id: "plan-one",
+  item_id: "test-cloud-item",
+  name: "雲端安全檢查",
+  interval_value: 6,
+  interval_unit: "month",
+  calculation_mode: "fixed",
+  base_date: "2026-10-21",
+  last_completed_date: "",
+  next_due_date: "2027-04-21",
+  reminder_days: 7,
+  enabled: true,
+  created_at: "2026-10-21 21:55:53",
+  updated_at: "2026-10-21 21:55:53",
+};
 export async function mockGoogleBridge(page: Page) {
   const state = {
     rows: [structuredClone(sampleItem)],
+    plans: [structuredClone(samplePlan)],
+    failPlanReads: false,
+    failPlanWrites: false,
+    failPlanReadback: false,
+    losePlanResponse: false,
+    planDelay: {} as Record<string, number>,
+    planWriteDelay: 0,
     calls: [] as { action: string; payload: Record<string, unknown> }[],
     failReads: false,
     malformed: false,
@@ -83,7 +106,88 @@ export async function mockGoogleBridge(page: Page) {
       await new Promise((resolve) =>
         setTimeout(resolve, state.getDelay[data.payload.item_id]),
       );
+    const planIndex = state.plans.findIndex(
+      (plan) => plan.plan_id === data.payload.plan_id,
+    );
+    const planWrite = [
+      "createMaintenancePlan",
+      "updateMaintenancePlan",
+      "disableMaintenancePlan",
+      "enableMaintenancePlan",
+    ].includes(data.action);
+    if (planWrite && state.planWriteDelay)
+      await new Promise((resolve) => setTimeout(resolve, state.planWriteDelay));
+    if (planWrite && state.failPlanWrites) {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ ok: false, error: "模擬保養寫入失敗" }),
+      });
+      return;
+    }
+    if (
+      data.action === "getMaintenancePlans" &&
+      state.planDelay[data.payload.item_id]
+    )
+      await new Promise((resolve) =>
+        setTimeout(resolve, state.planDelay[data.payload.item_id]),
+      );
     switch (data.action) {
+      case "getMaintenancePlans":
+        if (state.failPlanReads) error = "模擬保養讀取失敗";
+        else
+          result = state.plans.filter(
+            (plan) => plan.item_id === data.payload.item_id,
+          );
+        break;
+      case "getMaintenancePlan":
+        result = state.plans[planIndex] ?? null;
+        break;
+      case "createMaintenancePlan": {
+        const plan = {
+          ...samplePlan,
+          ...data.payload,
+          plan_id: `created-plan-${state.plans.length}`,
+          next_due_date: "2027-12-31",
+        };
+        state.plans.push(plan);
+        result = {
+          success: true,
+          plan_id: plan.plan_id,
+          item_id: plan.item_id,
+          name: plan.name,
+          next_due_date: plan.next_due_date,
+        };
+        break;
+      }
+      case "updateMaintenancePlan":
+        if (planIndex < 0) error = "找不到計畫";
+        else {
+          state.plans[planIndex] = {
+            ...state.plans[planIndex],
+            ...data.payload.changes,
+            next_due_date: "2028-02-29",
+          };
+          result = {
+            success: true,
+            message: "updated",
+            plan: state.plans[planIndex],
+          };
+        }
+        break;
+      case "disableMaintenancePlan":
+      case "enableMaintenancePlan":
+        if (planIndex < 0) error = "找不到計畫";
+        else {
+          const plan = state.plans[planIndex];
+          plan.enabled = data.action === "enableMaintenancePlan";
+          result = {
+            success: true,
+            plan_id: plan.plan_id,
+            enabled: plan.enabled,
+            message: "updated",
+          };
+        }
+        break;
       case "getItems":
         if (state.failReads) error = "模擬後端讀取失敗";
         else result = state.malformed ? { items: state.rows } : state.rows;
@@ -127,7 +231,10 @@ export async function mockGoogleBridge(page: Page) {
       default:
         error = "Unknown test action";
     }
-    const ignore = state.loseWriteResponse && data.action === "createItem";
+    if (planWrite && state.failPlanReadback) state.failPlanReads = true;
+    const ignore =
+      (state.loseWriteResponse && data.action === "createItem") ||
+      (planWrite && state.losePlanResponse);
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(
