@@ -25,7 +25,7 @@ async function open(page: Page) {
 }
 async function fakeDrive(page: Page) {
   const state = { files: [] as Array<Record<string, unknown>>, pending: null as Record<string, unknown> | null,
-    folderCreates: 0, uploads: 0, failUpload: false, mediaAuth: [] as string[] };
+    folderCreates: 0, uploads: 0, failUpload: false, failTrash: false, trashStatus: 0, mediaAuth: [] as string[] };
   let serial = 0;
   await page.route("https://www.googleapis.com/**", async route => {
     const request = route.request(), url = new URL(request.url()), method = request.method();
@@ -34,7 +34,7 @@ async function fakeDrive(page: Page) {
         "Access-Control-Expose-Headers": "Location", ...headers }, body: JSON.stringify(body),
     });
     if (method === "OPTIONS") return route.fulfill({ status: 204, headers: {
-      "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
+      "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,OPTIONS",
       "Access-Control-Allow-Headers": "Authorization,Content-Type,Content-Range,X-Upload-Content-Length,X-Upload-Content-Type",
     }});
     if (url.pathname.startsWith("/upload/drive/v3/files") && method === "POST") {
@@ -55,6 +55,14 @@ async function fakeDrive(page: Page) {
       state.files.push(row);
       return fulfill(row);
     }
+    if (method === "PATCH") {
+      if (state.trashStatus) return fulfill({}, state.trashStatus);
+      if (state.failTrash) return fulfill({}, 503);
+      const row = state.files.find(value => url.pathname.endsWith(`/${value.id}`));
+      if (!row) return fulfill({}, 404);
+      row.trashed = true;
+      return fulfill({ id: row.id, trashed: true });
+    }
     if (url.searchParams.get("alt") === "media") {
       state.mediaAuth.push(request.headers().authorization);
       return route.fulfill({
@@ -62,10 +70,11 @@ async function fakeDrive(page: Page) {
     });
     }
     const found = state.files.find(row => url.pathname.endsWith(`/${row.id}`));
-    if (found) return fulfill(found);
+    if (found) return fulfill({ ...found, trashed: found.trashed ?? false });
     if (url.pathname !== "/drive/v3/files") return fulfill({}, 404);
     const q = url.searchParams.get("q") ?? "";
     const rows = state.files.filter(row => {
+      if (row.trashed === true) return false;
       if (q.includes("attachment_id")) {
         const attachmentId = q.match(/value='([^']+)'/)?.[1];
         return (row.appProperties as Record<string,string>)?.attachment_id === attachmentId;
@@ -135,4 +144,120 @@ test("unknown upload outcome keeps attachment ID and blocks duplicate PUT", asyn
   await expect(page.getByText("已上傳並核對")).toHaveCount(1);
   expect((drive.files.find(row => row.id === "late-photo")?.appProperties as Record<string,string>).attachment_id).toBe(originalId);
   expect(drive.uploads).toBe(1);
+});
+test("opens private photos, switches by buttons and swipe, and closes by Escape", async ({ page }, testInfo) => {
+  test.skip(!enabled);
+  await fakeGis(page); await mockGoogleBridge(page); const drive = await fakeDrive(page);
+  await open(page);
+  await page.getByLabel("選取私人 Drive 照片").setInputFiles([
+    { name: "第一張.png", mimeType: "image/png", buffer: png },
+    { name: "第二張.png", mimeType: "image/png", buffer: Buffer.concat([png, Buffer.from([1])]) },
+  ]);
+  await page.getByRole("button", { name: "上傳／核對選取的照片" }).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(2);
+  await page.getByRole("button", { name: "放大預覽 第一張.png" }).click();
+  const dialog = page.getByRole("dialog", { name: "照片放大預覽" });
+  await expect(dialog).toContainText("第一張.png · 1 / 2");
+  await expect(dialog.locator("img")).toHaveAttribute("src", /^blob:/);
+  await dialog.getByRole("button", { name: "上一張" }).click();
+  await expect(dialog).toContainText("第二張.png · 2 / 2");
+  if (testInfo.project.name === "mobile") {
+    const box = await dialog.locator(".drive-photo-viewer").boundingBox();
+    if (box) {
+      await page.evaluate(({ x, y }) => {
+        const element = document.querySelector(".drive-photo-viewer")!;
+        element.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [new Touch({ identifier: 1, target: element, clientX: x + 100, clientY: y + 30 })] }));
+        element.dispatchEvent(new TouchEvent("touchend", { bubbles: true, changedTouches: [new Touch({ identifier: 1, target: element, clientX: x + 10, clientY: y + 30 })] }));
+      }, { x: box.x, y: box.y });
+      await expect(dialog).toContainText("第一張.png · 1 / 2");
+    }
+  } else {
+    await dialog.getByRole("button", { name: "下一張" }).click();
+    await expect(dialog).toContainText("第一張.png · 1 / 2");
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  expect(drive.mediaAuth.every(value => value === "Bearer SYNTHETIC_DRIVE_TOKEN")).toBe(true);
+});
+test("confirms trash, leaves failed operations visible, and rechecks owner metadata", async ({ page }) => {
+  test.skip(!enabled);
+  await fakeGis(page); await mockGoogleBridge(page); const drive = await fakeDrive(page);
+  await open(page);
+  await page.getByLabel("選取私人 Drive 照片").setInputFiles({ name: "要刪除.png", mimeType: "image/png", buffer: png });
+  await page.getByRole("button", { name: "上傳／核對選取的照片" }).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  await page.locator(".drive-photo-card").getByRole("button", { name: "刪除", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "刪除私人照片" })).toContainText("要刪除.png");
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  drive.failTrash = true;
+  await page.locator(".drive-photo-card").getByRole("button", { name: "刪除", exact: true }).click();
+  await page.getByRole("button", { name: "確認移入垃圾桶" }).click();
+  await expect(page.getByRole("alert")).toContainText("HTTP 503");
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  drive.failTrash = false;
+  const row = drive.files.find(value => String(value.id).startsWith("photo-"))!;
+  (row.appProperties as Record<string,string>).owner_id = "other-item";
+  await page.getByRole("button", { name: "確認移入垃圾桶" }).click();
+  await expect(page.getByRole("alert")).toContainText("所屬資料");
+  expect(row.trashed).not.toBe(true);
+  (row.appProperties as Record<string,string>).owner_id = sampleItem.item_id;
+  await page.getByRole("button", { name: "確認移入垃圾桶" }).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(0);
+  expect(row.trashed).toBe(true);
+});
+test("replaces only after new photo is readable and retries partial completion without another upload", async ({ page }) => {
+  test.skip(!enabled);
+  await fakeGis(page); await mockGoogleBridge(page); const drive = await fakeDrive(page);
+  await open(page);
+  await page.getByLabel("選取私人 Drive 照片").setInputFiles({ name: "原照片.png", mimeType: "image/png", buffer: png });
+  await page.getByRole("button", { name: "上傳／核對選取的照片" }).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  const old = drive.files.find(value => String(value.id).startsWith("photo-"))!;
+  await page.locator(".drive-photo-card").getByRole("button", { name: "更換" }).click();
+  const dialog = page.getByRole("dialog", { name: "更換私人照片" });
+  await dialog.getByLabel("選取更換照片").setInputFiles({ name: "新照片.png", mimeType: "image/png", buffer: Buffer.concat([png, Buffer.from([2])]) });
+  await expect(dialog.getByRole("button", { name: "上傳新照片並更換" })).toBeEnabled();
+  drive.failUpload = true;
+  await dialog.getByRole("button", { name: "上傳新照片並更換" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("結果尚未確認");
+  expect(old.trashed).not.toBe(true);
+  drive.failUpload = false;
+  // An uncertain PUT may have created the file. Reconcile the same attachment ID before retrying.
+  drive.files.push({ ...drive.pending!, id: "late-replacement", createdTime: "2026-10-23T10:00:00Z", size: png.length });
+  drive.failTrash = true;
+  await dialog.getByRole("button", { name: "上傳新照片並更換" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("部分完成");
+  expect(drive.uploads).toBe(2);
+  expect(old.trashed).not.toBe(true);
+  drive.failTrash = false;
+  await dialog.getByRole("button", { name: "核對並完成更換" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(drive.uploads).toBe(2);
+  expect(old.trashed).toBe(true);
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  await expect(page.locator(".drive-photo-card")).toContainText("新照片.png");
+});
+test("expired token during trash stops the operation and offers reauthorization", async ({ page }) => {
+  test.skip(!enabled);
+  await fakeGis(page); await mockGoogleBridge(page); const drive = await fakeDrive(page);
+  await open(page);
+  await page.getByLabel("選取私人 Drive 照片").setInputFiles({ name: "保留.png", mimeType: "image/png", buffer: png });
+  await page.getByRole("button", { name: "上傳／核對選取的照片" }).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  drive.trashStatus = 401;
+  await page.locator(".drive-photo-card").getByRole("button", { name: "刪除", exact: true }).click();
+  await page.getByRole("button", { name: "確認移入垃圾桶" }).click();
+  await expect(page.getByText("Google Drive 授權已過期，請重新授權")).toBeVisible();
+  await expect(page.getByRole("button", { name: "重新授權 Google Drive" })).toBeVisible();
+  expect(drive.files.find(row => String(row.id).startsWith("photo-"))?.trashed).not.toBe(true);
+});
+test("Mock photo tab never calls Google Drive", async ({ page }) => {
+  let requests = 0;
+  await page.route("https://www.googleapis.com/**", route => { requests++; return route.abort(); });
+  await page.goto("./#/items/water-heater");
+  await page.getByRole("tab", { name: /照片/ }).click();
+  await expect(page.getByRole("heading", { name: "照片與憑證" })).toBeVisible();
+  await expect(page.getByText("私人 Google Drive", { exact: true })).toHaveCount(0);
+  expect(requests).toBe(0);
 });

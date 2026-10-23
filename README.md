@@ -4,6 +4,8 @@
 
 目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；事項照片使用私人 Google Drive；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
 
+雲端事項的「照片」分頁可用已授權的私人 Google Drive 上傳多張 JPG／PNG／WebP（每張最多 10 MB）、放大預覽、切換照片、更換照片，或將照片移入 Drive 垃圾桶。更換會先上傳並核對新照片，再處理舊照片；若第二步失敗，畫面會保留新照片並提示部分完成，可用同一草稿重試。刪除和更換只針對目前事項且具備正確 `appProperties` 的應用程式照片。Token 僅在記憶體中，重新整理後需重新授權。Mock 照片與雲端 Drive 照片互不轉存。本功能不建立公開分享連結，也不支援永久刪除、PDF 或保養完成紀錄附件。
+
 ## 技術架構
 - 前端：React + TypeScript + Vite
 - 部署：GitHub Pages

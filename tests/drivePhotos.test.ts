@@ -11,7 +11,7 @@ function response(data: unknown, status = 200, headers?: HeadersInit): Response 
 }
 function fakeDrive() {
   const files: Array<Record<string, unknown>> = [];
-  let serial = 0, uploadCalls = 0, failUpload = false;
+  let serial = 0, uploadCalls = 0, failUpload = false, failTrash = false;
   let metadata: Record<string, unknown> | null = null;
   const request = vi.fn(async (raw: string, init: RequestInit = {}) => {
     const url = new URL(raw), method = init.method ?? "GET";
@@ -25,12 +25,20 @@ function fakeDrive() {
       files.push(row);
       return response(row);
     }
+    if (method === "PATCH") {
+      if (failTrash) return response({}, 503);
+      const target = files.find(row => url.pathname.endsWith(`/${row.id}`));
+      if (!target) return response({}, 404);
+      target.trashed = true;
+      return response({ id: target.id, trashed: true });
+    }
     if (url.searchParams.has("alt")) return new Response(png, { headers: { "Content-Type": "image/png" } });
     const found = files.find(row => url.pathname.endsWith(`/${row.id}`));
-    if (found) return response(found);
+    if (found) return response({ ...found, trashed: found.trashed ?? false });
     if (url.pathname !== "/drive/v3/files") return response({}, 404);
     const q = url.searchParams.get("q") ?? "";
     const rows = files.filter(row => {
+      if (row.trashed === true) return false;
       if (q.includes("attachment_id")) {
         const match = q.match(/value='([^']+)'/);
         return (row.appProperties as Record<string,string>)?.attachment_id === match?.[1];
@@ -51,7 +59,7 @@ function fakeDrive() {
     return row;
   });
   return { files, request, upload, transport: { request, upload } as DriveTransport,
-    fail: (value: boolean) => { failUpload = value; }, calls: () => uploadCalls };
+    fail: (value: boolean) => { failUpload = value; }, failTrash: (value: boolean) => { failTrash = value; }, calls: () => uploadCalls };
 }
 beforeEach(() => { vi.stubGlobal("crypto", webcrypto); sessionStorage.clear(); });
 it("accepts only matching JPG/PNG/WebP content and at most 10 MB", async () => {
@@ -97,4 +105,26 @@ it("uncertain upload keeps its UUID, blocks duplicate send, then reconciles exis
     appProperties: { attachment_id: draft.attachmentId, owner_type: "item", owner_id: "item-one" } });
   expect((await repo.uploadOne("item-one", file(), draft, () => {})).id).toBe("confirmed-photo");
   expect(drive.calls()).toBe(1);
+});
+it("rechecks owner and attachment metadata before trashing only the selected Drive file", async () => {
+  const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);
+  const photo = await repo.uploadOne("item-one", file(), await repo.prepare("item-one", file()), () => {});
+  await expect(repo.trash("item-two", photo)).rejects.toThrow("不屬於");
+  const row = drive.files.find(value => value.id === photo.id)!;
+  (row.appProperties as Record<string,string>).owner_id = "item-two";
+  await expect(repo.trash("item-one", photo)).rejects.toThrow("所屬");
+  (row.appProperties as Record<string,string>).owner_id = "item-one";
+  (row.appProperties as Record<string,string>).attachment_id = "another-attachment";
+  await expect(repo.trash("item-one", photo)).rejects.toThrow("識別碼");
+  (row.appProperties as Record<string,string>).attachment_id = photo.attachmentId;
+  drive.failTrash(true);
+  await expect(repo.trash("item-one", photo)).rejects.toThrow("HTTP 503");
+  expect(await repo.list("item-one")).toHaveLength(1);
+  drive.failTrash(false);
+  await repo.trash("item-one", photo);
+  expect(row.trashed).toBe(true);
+  expect(await repo.list("item-one")).toHaveLength(0);
+  await repo.trash("item-one", photo); // Retry after a lost PATCH reply must not repeat the mutation.
+  expect(drive.request.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(2);
+  expect(drive.request.mock.calls.some(([url, init]) => url.includes(photo.id) && init?.method === "DELETE")).toBe(false);
 });

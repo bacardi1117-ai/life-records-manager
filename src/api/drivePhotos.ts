@@ -223,6 +223,26 @@ export class DrivePhotosRepository {
     if (blob.type !== photo.mimeType || blob.size > MAX_BYTES) throw new Error("照片內容類型或大小不符");
     return blob;
   }
+  /** Re-read private metadata; never trust a thumbnail or filename as proof of ownership. */
+  async verifyManaged(itemId: string, photo: DrivePhoto): Promise<boolean> {
+    if (photo.ownerId !== id(itemId) || !photo.attachmentId) throw new Error("照片不屬於目前生活事項");
+    const fileUrl = `${API}/${encodeURIComponent(id(photo.id))}`;
+    const check = await json(await this.transport.request(`${fileUrl}?fields=id,name,mimeType,appProperties,trashed`));
+    const actual = parsePhoto(check, itemId);
+    if (actual.id !== photo.id || actual.attachmentId !== photo.attachmentId)
+      throw new Error("Drive 附件識別碼或所屬資料不符，已停止刪除");
+    if (typeof check.trashed !== "boolean") throw new Error("無法確認 Drive 檔案是否已在垃圾桶");
+    return !check.trashed;
+  }
+  /** Re-read private metadata immediately before moving a managed attachment to trash. */
+  async trash(itemId: string, photo: DrivePhoto): Promise<void> {
+    if (!await this.verifyManaged(itemId, photo)) return; // Prior PATCH succeeded before its reply was lost.
+    const fileUrl = `${API}/${encodeURIComponent(photo.id)}`;
+    const result = await json(await this.transport.request(`${fileUrl}?fields=id,trashed`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trashed: true }),
+    }));
+    if (result.id !== photo.id || result.trashed !== true) throw new Error("無法確認照片已移入垃圾桶");
+  }
 }
 
 export const drivePhotos = new DrivePhotosRepository(driveAuth);
