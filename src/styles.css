@@ -1585,3 +1585,59 @@ textarea {
 @media (max-width: 600px) { .drive-pdf-row { align-items: stretch; flex-direction: column; } .drive-pdf-preview { width: 100%; height: 58vh; } }
 .record-photo-area { margin-top: .8rem; }
 .record-photo-area .drive-connection { margin-top: .5rem; }
+
+/* Home overview and accessible history disclosures */
+.dashboard-refresh { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 0 0 18px; color:var(--muted); font-size:14px; flex-wrap:wrap; }
+.dashboard-filters { display:flex; flex-wrap:wrap; align-items:stretch; gap:10px; margin-bottom:22px; }
+.dashboard-filters .search { flex: 2 1 230px; }
+.dashboard-filters .filter { flex:1 1 130px; min-width:0; }
+.dashboard-filters .filter select { width:100%; max-width:none; font-size:14px; }
+.dashboard-filters > button { min-height:44px; }
+.dashboard-cover-image, .dashboard-cover-image img { height:100%; width:100%; }
+.dashboard-cover-image .cover-placeholder { height:100%; }
+.warranty-line { padding:9px 0 15px; font-size:13px; color:var(--muted); }
+.schedule-card h3 { font-size:16px; margin:14px 0 5px; }
+.dashboard-list { display:grid; gap:0; }
+.dashboard-list a { display:flex; align-items:center; gap:9px; padding:10px 0; border-bottom:1px solid var(--border); color:inherit; min-width:0; }
+.dashboard-list a:last-child { border-bottom:0; }
+.dashboard-list time { font-variant-numeric:tabular-nums; font-size:13px; white-space:nowrap; color:var(--muted); }
+.dashboard-list a > span { min-width:0; flex:1; }
+.dashboard-list strong, .dashboard-list small { display:block; overflow-wrap:anywhere; }
+.dashboard-list strong { font-size:14px; }
+.dashboard-list small { color:var(--muted); font-size:12px; }
+.dashboard-list em { font-size:12px; white-space:nowrap; font-style:normal; }
+.dashboard-overview-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin-top:24px; }
+.dashboard-overview-grid .panel { min-width:0; }
+.cost-panel { grid-column:1 / -1; }
+.cost-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.cost-totals p { padding:14px; background:#f4f7f2; border-radius:9px; margin:0; font-size:14px; }
+.cost-totals strong { display:block; margin-top:4px; font-size:21px; font-variant-numeric:tabular-nums; }
+.cost-panel h3 { margin:20px 0 8px; font-size:17px; }
+.cost-ranking { list-style:none; padding:0; margin:0; }
+.cost-ranking li { display:flex; justify-content:space-between; gap:12px; border-bottom:1px solid var(--border); padding:8px 0; font-size:15px; }
+.cost-trend { height:125px; display:flex; align-items:end; gap:6px; padding:10px 0; }
+.cost-trend > div { height:100%; flex:1; display:flex; flex-direction:column; justify-content:end; text-align:center; min-width:0; }
+.cost-trend span { display:block; min-height:3px; border-radius:4px 4px 0 0; background:#8cae90; }
+.cost-trend small { font-size:10px; color:var(--muted); }
+.history-toggle { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 6px; background:transparent; border:0; color:inherit; text-align:left; cursor:pointer; min-height:54px; list-style:none; }
+.history-toggle::-webkit-details-marker { display:none; }
+.history-toggle > span { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.history-toggle > span:last-child { align-items:flex-end; white-space:nowrap; }
+.history-toggle time { display:block; font-size:19px; line-height:1.25; font-weight:650; font-variant-numeric:tabular-nums; color:#34543e; }
+.history-toggle strong { font-size:17px; overflow-wrap:anywhere; }
+.history-toggle:focus-visible { outline:2px solid #34543e; outline-offset:2px; }
+.history-content { padding:3px 6px 16px; }
+.history-details[open] .history-arrow { display:inline-block; transform:rotate(180deg); }
+@media (max-width:760px) {
+  .dashboard-filters .search { flex-basis:100%; }
+  .dashboard-filters .filter { flex-basis:calc(50% - 5px); }
+  .dashboard-filters > button { flex:1 1 100%; }
+  .dashboard-overview-grid { grid-template-columns:1fr; }
+  .cost-panel { grid-column:auto; }
+  .cost-totals { grid-template-columns:1fr; }
+  .dashboard-list a { flex-wrap:wrap; }
+  .dashboard-list em { margin-left:auto; }
+  .history-toggle { align-items:flex-start; }
+  .history-toggle > span:last-child { white-space:normal; text-align:right; }
+  .item-grid { grid-template-columns:1fr; }
+}

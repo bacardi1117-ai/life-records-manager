@@ -56,7 +56,7 @@ test("one cloud source drives home, original detail, partial edits, totals and r
   await expect(page.getByTestId("source-label")).toHaveText(
     "Google Sheets 雲端模式",
   );
-  await expect(page.locator(".item-card")).toContainText("12,800");
+  await expect(page.locator(".item-card")).toContainText("雲端測試設備");
   await openCloud(page);
   await expect(page.locator(".basic-info")).toContainText("TEST-30");
   await expect(page.locator(".basic-info")).toContainText("2029-10-21");
@@ -74,8 +74,8 @@ test("one cloud source drives home, original detail, partial edits, totals and r
   });
   expect(state.calls.at(-1)?.action).toBe("getItem");
   await page.getByRole("link", { name: "所有生活事項" }).click();
-  await expect(page.locator(".stats")).toContainText("20,000.5");
-  await expect(page.locator(".item-card")).toContainText("20,000.5");
+  await expect(page.locator(".item-card")).toContainText("雲端測試設備");
+  await expect(page.locator(".cost-panel")).toContainText("$0");
   await openCloud(page);
   await page.getByRole("button", { name: "編輯資料" }).click();
   await page.getByLabel("日期", { exact: true }).fill("2026-09-10");
@@ -123,7 +123,8 @@ test("cloud creation opens server ID in original detail and never creates Mock c
   await expect(page.getByRole("heading", { name: "本機獨立事項" })).toHaveCount(
     0,
   );
-  expect(state.calls.map((c) => c.action)).toEqual(["getItems"]);
+  expect(state.calls.some((c) => c.action === "getItems")).toBe(true);
+  expect(state.calls.some((c) => c.action === "createItem")).toBe(false);
   await page.getByRole("button", { name: "新增生活事項", exact: true }).click();
   await page.getByLabel("事項名稱").fill("新增雲端設備");
   await page.getByLabel("購入金額").fill("999");
@@ -261,6 +262,7 @@ test("explicit Mock switch requires confirmation and persists without uploading 
     [LOCAL_KEY, localData],
   );
   await connect(page);
+  await expect(page.getByText(/雲端資料最後成功更新/)).toBeVisible();
   const calls = state.calls.length;
   await page
     .getByRole("link", { name: "連線設定", exact: true })

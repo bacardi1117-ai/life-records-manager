@@ -37,6 +37,7 @@ test("create, maintain, annotate and persist a life item", async ({ page }) => {
     page.getByText("下次 2026-04-06", { exact: false }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "歷史紀錄" }).click();
+  await page.locator(".history-toggle").first().click();
   await expect(page.getByText("濾網清潔完成")).toBeVisible();
   await expect(
     page.getByRole("img", { name: "maintenance.png" }),

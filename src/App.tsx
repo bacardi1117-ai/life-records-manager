@@ -32,6 +32,10 @@ export default function App() {
     else store.closeItem();
   }, [store, itemId, state.mode, state.status]);
   useEffect(() => {
+    if (!itemId && route !== "#/settings" && cloud && state.status === "ready" && !state.stale &&
+        state.overview.status === "idle") void store.loadOverview();
+  }, [store, itemId, route, cloud, state.status, state.stale, state.overview.status]);
+  useEffect(() => {
     setAdding(false);
   }, [state.mode]);
   return (
@@ -179,6 +183,8 @@ export default function App() {
                 items={state.items}
                 cloud={cloud}
                 readOnly={!writable}
+                overview={state.overview}
+                refresh={cloud ? store.refresh : undefined}
                 add={() => setAdding(true)}
               />
             )}

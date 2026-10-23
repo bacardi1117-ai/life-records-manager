@@ -32,6 +32,15 @@ function fakeDrive() {
       if (failTrash) return response({}, 503);
       const target = files.find(row => url.pathname.endsWith(`/${row.id}`));
       if (!target) return response({}, 404);
+      const changes = JSON.parse(String(init.body));
+      if (changes.appProperties) {
+        const props = { ...(target.appProperties as Record<string,string>) };
+        for (const [key, value] of Object.entries(changes.appProperties)) {
+          if (value === null) delete props[key]; else props[key] = String(value);
+        }
+        target.appProperties = props;
+        return response({ id: target.id, appProperties: props });
+      }
       target.trashed = true;
       return response({ id: target.id, trashed: true });
     }
@@ -54,6 +63,7 @@ function fakeDrive() {
         const match = q.match(/value='([^']+)'/);
         return (row.appProperties as Record<string,string>)?.attachment_id === match?.[1];
       }
+      if (q.includes("life_records_cover")) return (row.appProperties as Record<string,string>)?.life_records_cover === "true";
       const parent = q.match(/'([^']+)' in parents/)?.[1];
       if (parent && !(row.parents as string[])?.includes(parent)) return false;
       const name = q.match(/name = '([^']+)'/)?.[1];
@@ -111,6 +121,19 @@ it("creates one private root and item folder, persists photos and separates item
   await again.uploadOne("item-one", file("second.png"), await again.prepare("item-one", file("second.png")), () => {});
   expect(drive.files.filter(row => row.mimeType === "application/vnd.google-apps.folder")).toHaveLength(2);
   expect(await again.list("item-one")).toHaveLength(2);
+});
+it("marks one managed item photo as cover and rejects another item's photo", async () => {
+  const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);
+  const first = await repo.uploadOne("item-one", file("one.png"), await repo.prepare("item-one", file("one.png")), () => {});
+  const secondFile = new File([new Uint8Array([...png, 1])], "two.png", { type: "image/png" });
+  const second = await repo.uploadOne("item-one", secondFile, await repo.prepare("item-one", secondFile), () => {});
+  await expect(repo.setCover("item-two", first)).rejects.toThrow("不屬於");
+  await repo.setCover("item-one", first);
+  expect((await repo.listCovers()).map(row => row.id)).toEqual([first.id]);
+  await repo.setCover("item-one", second);
+  expect((await repo.listCovers()).map(row => row.id)).toEqual([second.id]);
+  await repo.trash("item-one", second);
+  expect(await repo.listCovers()).toEqual([]);
 });
 it("uncertain upload keeps its UUID, blocks duplicate send, then reconciles existing attachment", async () => {
   const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);

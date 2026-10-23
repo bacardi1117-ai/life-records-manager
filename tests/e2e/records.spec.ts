@@ -89,6 +89,7 @@ test("complete rereads backend due date and records, updates cost and both histo
     await page.evaluate((key) => localStorage.getItem(key), LOCAL_KEY),
   ).toBeNull();
   await page.getByRole("button", { name: "查看紀錄", exact: true }).click();
+  await page.locator(".plan-history .history-toggle").first().click();
   await expect(page.locator(".plan-history")).toContainText("完成冷氣清潔");
   expect(
     state.calls.some(
@@ -98,12 +99,10 @@ test("complete rereads backend due date and records, updates cost and both histo
     ),
   ).toBe(true);
   await page.getByRole("tab", { name: /歷史紀錄/ }).click();
+  await page.locator(".cloud-history .history-toggle").first().click();
   await expect(page.getByRole("tabpanel")).toContainText("師傅甲");
-  await expect(page.getByRole("tabpanel")).toContainText(
-    `保養項目：${samplePlan.name}`,
-  );
+  await expect(page.getByRole("tabpanel")).toContainText(samplePlan.name);
   await expect(page.getByRole("tabpanel")).toContainText("備註：清潔濾網");
-  await page.getByText("查看完整內容").click();
   await expect(page.getByRole("tabpanel")).toContainText("清潔濾網");
   await page.reload();
   await expect(page.locator(".basic-info")).toContainText("$1,350.5");
