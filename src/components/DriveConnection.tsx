@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import type { TouchEvent } from "react";
 import { driveAuth } from "../api/driveAuth";
 import { drivePhotos } from "../api/drivePhotos";
-import type { DrivePhoto, PendingPhoto } from "../api/drivePhotos";
+import type { DrivePhoto, PendingPhoto, PhotoOwner } from "../api/drivePhotos";
+import type { ItemsStore } from "../api/itemsStore";
 import { Modal } from "./Forms";
 
 interface UploadEntry {
@@ -15,6 +16,15 @@ interface UploadEntry {
 }
 const errorText = (error: unknown) => error instanceof Error ? error.message : "Google Drive 操作失敗";
 export default function DriveConnection({ itemId }: { itemId: string }) {
+  return <DriveConnectionBase owner={{ type: "item", id: itemId }} />;
+}
+export function DriveRecordConnection({ itemId, recordId, store }: {
+  itemId: string; recordId: string; store: ItemsStore;
+}) {
+  return <DriveConnectionBase owner={{ type: "record", id: recordId }}
+    ensureSaved={() => store.confirmStoredRecord(itemId, recordId)} />;
+}
+function DriveConnectionBase({ owner, ensureSaved }: { owner: PhotoOwner; ensureSaved?: () => Promise<void> }) {
   const snapshot = useSyncExternalStore(driveAuth.subscribe, driveAuth.getSnapshot);
   useEffect(() => { void driveAuth.prepare(); }, []);
   return <section className="drive-connection" aria-label="私人 Google Drive 連線">
@@ -23,7 +33,7 @@ export default function DriveConnection({ itemId }: { itemId: string }) {
       {snapshot.state === "authorized" && <p role="status">Google Drive 已授權</p>}
       {snapshot.state === "loading" && <p role="status">正在載入 Google 授權元件…</p>}
       {snapshot.state === "authorizing" && <p role="status">正在等待 Google 授權並驗證 Drive 連線…</p>}
-      {snapshot.state === "idle" && <p>連接後可上傳及查看此生活事項的私人照片。</p>}
+      {snapshot.state === "idle" && <p>連接後可上傳及查看{owner.type === "record" ? "此保養完成紀錄" : "此生活事項"}的私人照片。</p>}
       {snapshot.state === "revoked" && <p role="status">已取消 Google Drive 授權</p>}
       {snapshot.error && <p className="error-banner" role="alert">{snapshot.error}</p>}
       {snapshot.state !== "authorized" && <button className="primary" type="button"
@@ -33,9 +43,9 @@ export default function DriveConnection({ itemId }: { itemId: string }) {
       </button>}
       {snapshot.state === "authorized" && <>
         <button className="secondary" type="button" onClick={() => driveAuth.revoke()}>取消 Google Drive 授權</button>
-        <DrivePhotosPanel key={itemId} itemId={itemId} />
+        <DrivePhotosPanel key={`${owner.type}:${owner.id}`} owner={owner} ensureSaved={ensureSaved} />
       </>}
-      <p className="muted small">僅使用 drive.file 權限。照片儲存在私人 Drive；刪除會移入私人垃圾桶，不產生公開連結。目前不提供分享或保養紀錄附件。</p>
+      <p className="muted small">僅使用 drive.file 權限。照片儲存在私人 Drive；刪除會移入私人垃圾桶，不產生公開連結或公開分享。</p>
     </>}
   </section>;
 }
@@ -94,7 +104,7 @@ interface ReplaceDraft {
   old: DrivePhoto; file: File | null; pending: PendingPhoto | null;
   newPhoto: DrivePhoto | null; verified: boolean; progress: number; error: string;
 }
-function DrivePhotosPanel({ itemId }: { itemId: string }) {
+function DrivePhotosPanel({ owner, ensureSaved }: { owner: PhotoOwner; ensureSaved?: () => Promise<void> }) {
   const [rows, setRows] = useState<DrivePhoto[]>([]);
   const [confirmed, setConfirmed] = useState<DrivePhoto[]>([]);
   const [entries, setEntries] = useState<UploadEntry[]>([]);
@@ -119,20 +129,20 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
     let active = true;
     setLoading(true);
     setError("");
-    void drivePhotos.list(itemId).then(photos => {
+    void drivePhotos.list(owner).then(photos => {
       if (active) { setRows(photos); setLoading(false); }
     }).catch(cause => {
       if (active) { setError(errorText(cause)); setLoading(false); }
     });
     return () => { active = false; };
-  }, [itemId, generation]);
+  }, [owner.type, owner.id, generation]);
   const photos = useMemo(() => {
     const ids = new Set(rows.map(row => row.id));
     return [...confirmed.filter(row => !ids.has(row.id)), ...rows];
   }, [rows, confirmed]);
   const viewIndex = photos.findIndex(photo => photo.id === viewId);
   async function refresh(expected?: { added?: string; removed?: string }) {
-    const latest = await drivePhotos.list(itemId);
+    const latest = await drivePhotos.list(owner);
     if (expected?.added && !latest.some(photo => photo.id === expected.added))
       throw new Error("Drive 清單尚未顯示新照片，請稍後重新核對");
     if (expected?.removed && latest.some(photo => photo.id === expected.removed))
@@ -145,7 +155,8 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
     if (!deleting || actionBusy) return;
     setActionBusy(true); setError(""); setNotice("");
     try {
-      await drivePhotos.trash(itemId, deleting);
+      await ensureSaved?.();
+      await drivePhotos.trash(owner, deleting);
       await refresh({ removed: deleting.id });
       setDeleting(null);
       setNotice("照片已移入 Google Drive 垃圾桶。");
@@ -159,7 +170,7 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
     if (current.newPhoto || current.pending?.uncertain) return;
     updateReplace({ ...current, file, pending: null, verified: false, progress: 0, error: "正在檢查新照片…" });
     try {
-      const pending = await drivePhotos.prepare(itemId, file);
+      const pending = await drivePhotos.prepare(owner, file);
       if (replaceRef.current?.old.id === current.old.id)
         updateReplace({ ...current, file, pending, verified: false, progress: 0, error: "" });
     } catch (cause) {
@@ -172,10 +183,11 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
     if (!draft || actionBusy || (!draft.pending && !draft.newPhoto)) return;
     setActionBusy(true); setError(""); setNotice("");
     try {
+      await ensureSaved?.();
       let next = draft;
       if (!next.newPhoto) {
-        if (!await drivePhotos.verifyManaged(itemId, next.old)) throw new Error("原照片已移入垃圾桶，請重新讀取清單");
-        const uploaded = await drivePhotos.uploadOne(itemId, next.file!, next.pending!, progress => {
+        if (!await drivePhotos.verifyManaged(owner, next.old)) throw new Error("原照片已移入垃圾桶，請重新讀取清單");
+        const uploaded = await drivePhotos.uploadOne(owner, next.file!, next.pending!, progress => {
           const active = replaceRef.current;
           if (active?.old.id === draft.old.id) updateReplace({ ...active, progress });
         });
@@ -188,7 +200,7 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
         next = { ...next, verified: true };
         updateReplace(next);
       }
-      await drivePhotos.trash(itemId, next.old);
+      await drivePhotos.trash(owner, next.old);
       await refresh({ added: next.newPhoto!.id, removed: next.old.id });
       updateReplace(null);
       setNotice("照片已更換，舊照片已移入 Google Drive 垃圾桶。");
@@ -196,7 +208,7 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
       const active = replaceRef.current;
       if (active) {
         const pending = active.file && !active.newPhoto
-          ? await drivePhotos.prepare(itemId, active.file).catch(() => active.pending) : active.pending;
+          ? await drivePhotos.prepare(owner, active.file).catch(() => active.pending) : active.pending;
         updateReplace({ ...active, pending, error: active.newPhoto
           ? `部分完成：新照片已上傳，舊照片可能仍在 Drive。${errorText(cause)} 請核對後重試移入垃圾桶。`
           : errorText(cause) });
@@ -213,7 +225,7 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
     for (const file of Array.from(files)) {
       const key = crypto.randomUUID();
       try {
-        const pending = await drivePhotos.prepare(itemId, file);
+        const pending = await drivePhotos.prepare(owner, file);
         if (selected.some(entry => entry.pending?.key === pending.key)) continue;
         selected.push({ key, file, pending, progress: 0, state: "ready", error: "" });
       } catch (cause) {
@@ -232,12 +244,13 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
         if (!entry.pending || entry.state === "success") continue;
         patch(entry.key, { state: "uploading", error: "" });
         try {
-          const photo = await drivePhotos.uploadOne(itemId, entry.file, entry.pending,
+          await ensureSaved?.();
+          const photo = await drivePhotos.uploadOne(owner, entry.file, entry.pending,
             progress => patch(entry.key, { progress }));
           setConfirmed(current => current.some(row => row.id === photo.id) ? current : [photo, ...current]);
           patch(entry.key, { state: "success", progress: 100, error: "" });
         } catch (cause) {
-          const pending = await drivePhotos.prepare(itemId, entry.file).catch(() => entry.pending);
+          const pending = await drivePhotos.prepare(owner, entry.file).catch(() => entry.pending);
           patch(entry.key, { state: "error", pending, error: errorText(cause) });
         }
       }
@@ -245,13 +258,13 @@ function DrivePhotosPanel({ itemId }: { itemId: string }) {
     } finally { setBusy(false); }
   }
   return <div className="drive-photo-panel">
-    <div className="section-heading"><h3>此事項的私人照片</h3>
+    <div className="section-heading"><h3>{owner.type === "record" ? "此完成紀錄" : "此事項"}的私人照片</h3>
       <button className="text-button" type="button" disabled={loading || busy || actionBusy} onClick={() => setGeneration(value => value + 1)}>重新讀取照片</button>
     </div>
     {error && !deleting && <p className="error-banner" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {loading && <p role="status">正在讀取 Drive 照片…</p>}
-    {!loading && !error && !photos.length && <p className="empty">這件事項尚無私人 Drive 照片。</p>}
+    {!loading && !error && !photos.length && <p className="empty">{owner.type === "record" ? "這筆完成紀錄" : "這件事項"}尚無私人 Drive 照片。</p>}
     {!!photos.length && <div className="drive-photo-grid">{photos.map(photo => <div className="drive-photo-card" key={photo.id}>
       <button type="button" className="drive-photo-open" aria-label={`放大預覽 ${photo.name}`} onClick={() => setViewId(photo.id)}><PrivateImage photo={photo} /></button>
       <span title={photo.name}>{photo.name}</span>

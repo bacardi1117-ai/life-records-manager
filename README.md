@@ -4,7 +4,7 @@
 
 目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；事項照片使用私人 Google Drive；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
 
-雲端事項的「照片」分頁可用已授權的私人 Google Drive 上傳多張 JPG／PNG／WebP（每張最多 10 MB）、放大預覽、切換照片、更換照片，或將照片移入 Drive 垃圾桶。更換會先上傳並核對新照片，再處理舊照片；若第二步失敗，畫面會保留新照片並提示部分完成，可用同一草稿重試。刪除和更換只針對目前事項且具備正確 `appProperties` 的應用程式照片。Token 僅在記憶體中，重新整理後需重新授權。Mock 照片與雲端 Drive 照片互不轉存。本功能不建立公開分享連結，也不支援永久刪除、PDF 或保養完成紀錄附件。
+雲端事項的「照片」分頁及每筆已儲存完成紀錄的「查看照片／上傳」區塊，可用已授權的私人 Google Drive 上傳多張 JPG／PNG／WebP（每張最多 10 MB）、放大預覽、切換照片、更換照片，或將照片移入 Drive 垃圾桶。更換會先上傳並核對新照片，再處理舊照片；若第二步失敗，畫面會保留新照片並提示部分完成，可用同一草稿重試。刪除和更換只針對目前 owner 且具備正確 `appProperties` 的應用程式照片。Token 僅在記憶體中，重新整理後需重新授權。Mock 照片與雲端 Drive 照片互不轉存。本功能不建立公開分享連結，也不支援永久刪除或 PDF。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -248,10 +248,14 @@ GitHub Actions 的 Repository Variable `VITE_GOOGLE_CLIENT_ID` 會在 Pages 的 
 
 正式網站中，先使用已有的 Google Sheets 連線開啟一筆生活事項，切到「照片」，按「連接私人 Google Drive」，使用已列為 OAuth 測試使用者的 Google 帳號完成授權。網站只請求 `https://www.googleapis.com/auth/drive.file`，取得 Access Token 後呼叫 Drive API 的唯讀清單端點檢查基本連線。授權及驗證成功才顯示「Google Drive 已授權」。可在同一區塊取消授權；Token 到期、授權視窗取消或 API 拒絕時會顯示錯誤並可重新授權。Token 僅在目前網頁的記憶體中，重新整理後需重新授權。
 
-Drive 操作不使用 Apps Script Bridge；目前不提供刪除、分享或公開連結；Mock 照片繼續存在原本的本機資料來源。模擬 GIS／Drive API 測試不代表正式 Google 帳號授權已驗證。
+Drive 操作不使用 Apps Script Bridge；不提供永久刪除、分享或公開連結；Mock 照片繼續存在原本的本機資料來源。模擬 GIS／Drive API 測試不代表正式 Google 帳號操作已驗證。
 
 ## 私人 Google Drive 事項照片（第二階段）
 
 雲端事項的「照片」分頁可一次選取多張 JPG、PNG、WebP（每張最多 10 MB）。網站以使用者的 drive.file 授權，將照片放進私人 Drive 的「日日有序 Life Records」資料夾及對應 item_id 子資料夾；檔案的 appProperties 記錄 attachment_id、owner_type=item、owner_id=item_id。重新授權後會重新查詢檔案，縮圖透過授權 Drive API 讀取並使用暫時的 Blob URL 顯示，不使用公開圖片網址。
 
-每張照片的待送識別碼與 SHA-256 指紋暫存於該分頁的 sessionStorage；不儲存 Access Token。上傳回應不確定時，會先以相同 attachment_id 查詢，仍無法確認時停止再次送出，避免重複建立附件。資料夾 ID 的本機快取會再向 Drive 驗證，重新整理後先查找既有資料夾。此階段不支援刪除、分享、PDF 或保養完成紀錄照片。模擬測試不等於正式 Google Drive 上傳驗證。
+每張照片的待送識別碼與 SHA-256 指紋暫存於該分頁的 sessionStorage；不儲存 Access Token。上傳回應不確定時，會先以相同 attachment_id 查詢，仍無法確認時停止再次送出，避免重複建立附件。資料夾 ID 的本機快取會再向 Drive 驗證，重新整理後先查找既有資料夾。模擬測試不等於正式 Google Drive 上傳驗證。
+
+## 私人 Google Drive 保養完成紀錄照片
+
+雲端「歷史紀錄」中的每筆完成紀錄，以及定期子項目展開的完成紀錄，均可各自展開「查看照片／上傳」。紀錄照片與事項照片沿用同一 Drive Adapter，但使用獨立資料夾及 `appProperties`：`attachment_id` 為 UUID、`owner_type=record`、`owner_id=record_id`。上傳、更換和移入垃圾桶前會向 Google Sheets 讀回原 `record_id`，確認紀錄確實存在且屬於目前事項；每次 Drive 操作也會核對檔案擁有者與附件 ID。不同紀錄、事項照片與 Mock 照片不互相混用。網站不修改 Sheets Attachments 工作表或 Apps Script。模擬測試通過後，仍需在正式帳號驗證上傳、重新授權、放大預覽、更換與移入垃圾桶。

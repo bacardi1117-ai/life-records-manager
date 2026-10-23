@@ -26,7 +26,7 @@
 - 選擇 cloud 後，連線失敗必須停止寫入，不自動回退 Mock。重新整理保留使用者選擇；切換 Mock 前顯示不同來源的確認。
 - 雲端 updateItem 的 changes 只含相對於編輯初始資料的實際變更欄位；不要把整個 LifeItem 送入後端。更新成功後以原 item_id 重新 getItem。
 - 新增必須採用後端回傳 item_id；不得自建替代 ID 或 Mock 副本。跨 ID／舊連線的回應不可覆蓋目前資料。
-- 雲端 MaintenancePlans 沿用同一 Bridge 及 ItemsStore，在既有定期子項目分頁操作；Mock 保養維持既有格式，不互相轉存。完成保養與歷史使用雲端 MaintenanceRecords；獨立 Notes 支援 item 與 plan，照片仍未支援雲端同步。
+- 雲端 MaintenancePlans 沿用同一 Bridge 及 ItemsStore，在既有定期子項目分頁操作；Mock 保養維持既有格式，不互相轉存。完成保養與歷史使用雲端 MaintenanceRecords；獨立 Notes 支援 item 與 plan；事項及已儲存完成紀錄的照片使用私人 Drive。
 - 不修改既有 localStorage 資料格式或自動遷移紀錄。切換來源只清理畫面快取；共用型別新增欄位需相容舊 Mock 資料。
 
 ## 雲端保養計畫
@@ -63,7 +63,7 @@
 
 - OAuth 僅使用 Google Identity Services Token Client 與 drive.file scope；Client ID 從 GitHub Actions Variable 進入 Vite 建置，未設定時顯示未設定。
 - Access Token 僅保留在記憶體；不透過 Apps Script Bridge，不寫入 localStorage 或原有 Mock 照片資料。Drive API 以授權 Token 讀寫私人事項照片；縮圖使用短暫 Blob URL，不使用公開連結。
-- 模擬授權與 Drive API 測試不得宣稱正式 Google 帳號操作成功；事項照片可上傳、更換或移入垃圾桶，不提供分享或保養紀錄附件。
+- 模擬授權與 Drive API 測試不得宣稱正式 Google 帳號操作成功；事項與已儲存完成紀錄的照片可上傳、更換或移入垃圾桶，不提供公開分享。
 
 ## 私人 Google Drive 事項照片
 
@@ -71,3 +71,9 @@
 - JPG、PNG、WebP 需檢查 MIME、檔案內容與 10 MB 上限。10 MB 上傳使用 Drive 續傳工作階段，XHR 只用於回報進度；未知結果保留相同 attachment_id，核對前禁止重新送出。
 - 私人照片透過授權 Drive API 讀取並用 Blob URL 預覽，切換事項或卸載元件時釋放。不得使用公開分享連結、Apps Script Bridge、Mock 照片資料或把 Token 寫入儲存空間。
 - 刪除前必須重新讀取檔案 metadata，核對 file ID、attachment_id、owner_type=item、owner_id；只以 PATCH trashed=true 移入垃圾桶。更換時先上傳並讀回新照片，再移入舊照片垃圾桶；部分完成或未知結果須保留新照片及原附件識別碼供重試，不得宣稱完整成功。
+
+## 私人 Google Drive 完成紀錄照片
+
+- 沿用同一 Drive Adapter 與 UI；紀錄照片的 `owner_type=record`、`owner_id=record_id`、`attachment_id=UUID`。資料夾及待送指紋按 owner 型別與 ID 隔離，禁止混入事項照片或其他紀錄。
+- 僅向已從 Sheets 載入的完成紀錄顯示入口；每次上傳、更換或移入垃圾桶前以 `getMaintenanceRecord` 確認 record_id 仍存在且 item_id 為目前事項。Drive 檔案操作前重新核對 file ID、owner_type、owner_id、attachment_id；不使用公開 Apps Script 執行 Drive 操作。
+- 不修改 Sheets Attachments 工作表、Apps Script、Mock 照片資料或 OAuth 設定；不提交私人照片或 Token。模擬測試不代表正式 Drive 操作驗證。
