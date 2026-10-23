@@ -49,6 +49,9 @@ function Gallery({ photos }: { photos: Photo[] }) {
 }
 export default function Detail({
   item,
+  initialTab = "定期子項目",
+  focusPlanId = "",
+  focusRecordId = "",
   store,
   plans,
   records,
@@ -64,6 +67,9 @@ export default function Detail({
   setArchived,
   recover,
 }: {
+  initialTab?: "定期子項目" | "歷史紀錄";
+  focusPlanId?: string;
+  focusRecordId?: string;
   store: ItemsStore;
   plans: PlansSnapshot;
   records: RecordsSnapshot;
@@ -80,7 +86,14 @@ export default function Detail({
   complete: (r: MaintenanceRecord) => Promise<void>;
   busy: boolean;
 }) {
-  const [tab, setTab] = useState("定期子項目");
+  const [tab, setTab] = useState<string>(initialTab);
+  useEffect(() => {
+    const targetId = tab === "定期子項目" && focusPlanId ? `maintenance-plan-${focusPlanId}` :
+      tab === "歷史紀錄" && focusRecordId ? `maintenance-record-${focusRecordId}` : "";
+    if (!targetId) return;
+    const element = document.getElementById(targetId);
+    if (element) { element.scrollIntoView({ block: "center" }); element.focus({ preventScroll: true }); }
+  }, [tab, focusPlanId, focusRecordId, plans.status, records.status, item.id]);
   useEffect(() => {
     if (cloud && !busy && records.status === "idle")
       void store.loadRecords(item.id);
@@ -308,7 +321,7 @@ export default function Detail({
                     {item.tasks.map((task) => {
                       const due = nextDue(item, task);
                       return (
-                        <div className="task-row" key={task.id}>
+                        <div className="task-row" key={task.id} id={`maintenance-plan-${task.id}`} tabIndex={-1}>
                           <span
                             className={`task-icon ${daysUntil(due) < 0 ? "amber" : ""}`}
                           >
@@ -368,7 +381,7 @@ export default function Detail({
                       {[...item.history]
                         .sort((a, b) => b.date.localeCompare(a.date))
                         .map((r) => (
-                          <article key={r.id}>
+                          <article key={r.id} id={`maintenance-record-${r.id}`} tabIndex={-1}>
                             <details className="history-details">
                               <summary className="history-toggle">
                                 <span><time>{r.date}</time><strong>{r.taskName}</strong></span>

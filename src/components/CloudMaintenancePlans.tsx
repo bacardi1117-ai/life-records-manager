@@ -80,7 +80,7 @@ export default function CloudMaintenancePlans({
       {state.status === "loading" && <p role="status">正在讀取保養計畫…</p>}
       {state.itemId === item.id &&
         state.rows.map((plan) => (
-          <div className="task-row cloud-plan" key={plan.plan_id}>
+          <div className="task-row cloud-plan" key={plan.plan_id} id={`maintenance-plan-${plan.plan_id}`} tabIndex={-1}>
             <span className="task-icon">
               <Repeat2 size={20} />
             </span>

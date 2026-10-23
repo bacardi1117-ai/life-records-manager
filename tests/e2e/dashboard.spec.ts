@@ -12,11 +12,17 @@ test("cloud dashboard combines real plan and record data without purchase cost",
   state.rows[0].warranty_date="2026-11-05";
   state.rows.push({...sampleItem,item_id:"second",name:"第二台冰箱",category:"廚房",brand:"另一品牌",model:"FR-2",location:"廚房",warranty_date:""});
   state.plans[0]={...samplePlan,next_due_date:"2026-10-22"};
-  state.plans.push({...samplePlan,item_id:"second",plan_id:"plan-second",name:"冰箱清理",next_due_date:"2026-10-28"});
+  state.plans.push({...samplePlan,item_id:"second",plan_id:"plan-second",name:"冰箱清理",next_due_date:"2026-10-28"},
+    {...samplePlan,item_id:"second",plan_id:"plan-third",name:"長期保養",next_due_date:"2026-11-10"});
   state.records.push({...sampleRecord,record_id:"record-one",completed_date:"2026-10-20",amount:350});
   await connect(page);
   await expect(page.locator(".stats")).toContainText("已逾期保養");
+  await page.getByLabel("首頁提醒條件").selectOption("7");
   await expect(page.locator(".schedule-card")).toContainText("冰箱清理");
+  await expect(page.locator(".schedule-card")).not.toContainText("長期保養");
+  await page.getByLabel("首頁提醒條件").selectOption("30");
+  await expect(page.locator(".schedule-card")).toContainText("長期保養");
+  await expect(page.locator(".schedule-card")).not.toContainText("冰箱清理");
   await expect(page.locator(".cost-panel")).toContainText("$350");
   await expect(page.locator(".cost-panel")).not.toContainText("$12,800");
   await expect(page.locator(".dashboard-overview-grid")).toContainText("設備保固");

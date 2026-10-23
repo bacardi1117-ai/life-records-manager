@@ -5,7 +5,7 @@ import type { OverviewSnapshot } from "../api/itemsStore";
 import { daysUntil, money } from "../lib/dates";
 import { buildDashboard, filterItems, maintenanceCosts, taipeiToday } from "../lib/dashboard";
 import type { DashboardFilters, DueEntry } from "../lib/dashboard";
-import { DashboardCover, useDashboardCovers } from "./DashboardCover";
+import DashboardCover from "./DashboardCover";
 
 const initialFilters: DashboardFilters = { query: "", category: "", status: "", plan: "", due: "" };
 const itemUrl = (id: string) => `#/items/${encodeURIComponent(id)}`;
@@ -25,13 +25,13 @@ export default function Dashboard({ items, add, cloud = false, readOnly = false,
 }) {
   const [filters, setFilters] = useState<DashboardFilters>(initialFilters);
   const [year, setYear] = useState(Number(taipeiToday().slice(0, 4)));
+  const [reminderFilter, setReminderFilter] = useState<"overdue" | "7" | "30">("overdue");
   const today = taipeiToday();
   const ready = !cloud || (overview.status === "ready" && !readOnly);
   const data = useMemo(() => ready ? buildDashboard(items, cloud ? "cloud" : "mock", overview.rows, today) : null,
     [items, cloud, overview.rows, ready, today]);
   const filtered = filterItems(items, filters, cloud ? "cloud" : "mock", ready ? overview.rows : {}, today);
   const costs = data ? maintenanceCosts(data.completed, today, year) : null;
-  const { photos: covers, error: coverError } = useDashboardCovers(cloud);
   const set = (key: keyof DashboardFilters, value: string) => setFilters(current => ({ ...current, [key]: value }));
   const years = data ? [...new Set([year, Number(today.slice(0,4)), ...data.completed.map(row => Number(row.date.slice(0,4)))])].sort((a,b) => b-a) : [year];
   return <>
@@ -44,7 +44,6 @@ export default function Dashboard({ items, add, cloud = false, readOnly = false,
     </div>
     {cloud && overview.status === "error" && <p role="alert" className="error-banner">保養看板讀取失敗：{overview.error}。目前不顯示費用或提醒統計。</p>}
     {cloud && overview.status === "loading" && <p role="status">正在讀取雲端保養計畫與完成紀錄…</p>}
-    {coverError && <p role="alert" className="error-banner">私人封面讀取失敗：{coverError}</p>}
     <section className="stats" aria-label="事項統計">
       <div><span className="stat-icon green"><ClipboardList /></span><div><p>生活事項</p><strong>{items.length}<small>件</small></strong></div></div>
       <div><span className="stat-icon amber"><CalendarDays /></span><div><p>30 天內待保養</p><strong>{data ? data.next30.length : "—"}<small>項</small></strong></div></div>
@@ -64,7 +63,7 @@ export default function Dashboard({ items, add, cloud = false, readOnly = false,
       <div className="item-grid">{filtered.map(item => {
         const due = data?.due.find(row => row.item.id === item.id);
         return <a href={itemUrl(item.id)} className="item-card" key={item.id}>
-          <div className="item-cover">{cloud ? <DashboardCover photo={covers[item.id]} /> : item.photos[0] ? <img src={item.photos[0].url} alt={item.photos[0].name} /> : <div className="cover-placeholder"><ClipboardList size={64}/></div>}
+          <div className="item-cover">{cloud ? <DashboardCover itemId={item.id} /> : item.photos[0] ? <img src={item.photos[0].url} alt={item.photos[0].name} /> : <div className="cover-placeholder"><ClipboardList size={64}/></div>}
             <span className="category-badge">{item.category}</span><span className="open-arrow"><ArrowUpRight size={18}/></span></div>
           <div className="item-body"><h3>{item.name}</h3><p className="muted">{item.location || "尚未設定地點"}</p>
             <div className="item-meta"><span><CalendarDays size={14}/>{item.date}</span><span>{ready ? `${cloud ? overview.rows[item.id]?.plans.length ?? 0 : item.tasks.length} 個定期項目` : "保養資料待讀取"}</span></div>
@@ -74,10 +73,13 @@ export default function Dashboard({ items, add, cloud = false, readOnly = false,
       })}<button className="add-card" onClick={add} disabled={readOnly}><span><Plus size={26}/></span><strong>新增一件生活事項</strong><p>家電、愛車、生活裡的大小事</p></button></div>
       {filtered.length === 0 && <p className="empty">沒有符合的事項，試試其他條件。</p>}
     </div><aside><div className="section-heading"><h2>保養小日曆</h2><CalendarDays size={19}/></div>
+      <a href="#/calendar" className="calendar-full-link">查看完整月曆 →</a>
       <div className="schedule-card">{!data ? <p className="empty">保養資料讀取完成後顯示提醒。</p> : <>
-        <h3>已逾期</h3><DueList rows={data.overdue.slice(0,5)} empty="目前沒有逾期保養。"/>
-        <h3>未來 7 天</h3><DueList rows={data.next7.slice(0,5)} empty="未來 7 天沒有保養。"/>
-        <h3>未來 30 天</h3><DueList rows={data.next30.slice(0,5)} empty="未來 30 天沒有保養。"/>
+        <label className="reminder-filter">提醒條件 <select aria-label="首頁提醒條件" value={reminderFilter} onChange={event => setReminderFilter(event.target.value as typeof reminderFilter)}>
+          <option value="overdue">已逾期</option><option value="7">未來 7 天</option><option value="30">第 8 至 30 天</option>
+        </select></label>
+        <DueList rows={(reminderFilter === "overdue" ? data.overdue : reminderFilter === "7" ? data.next7 : data.next30.filter(row => row.days > 7)).slice(0,5)}
+          empty={reminderFilter === "overdue" ? "目前沒有逾期保養。" : reminderFilter === "7" ? "未來 7 天沒有保養。" : "第 8 至 30 天沒有保養。"}/>
       </>}</div></aside></section>
     {data && costs && <div className="dashboard-overview-grid">
       <section className="panel"><div className="section-heading"><h2>最近完成保養</h2></div>{data.completed.length ? <div className="dashboard-list">{data.completed.slice(0,5).map(row => <a href={itemUrl(row.item.id)} key={row.id}><time>{row.date}</time><span><strong>{row.name}</strong><small>{row.item.name} · {completedRelative(row.date, today)}</small></span><em>{money(row.amount)}</em></a>)}</div> : <p className="empty">尚無完成紀錄。</p>}</section>
