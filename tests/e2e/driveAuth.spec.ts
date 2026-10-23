@@ -52,7 +52,8 @@ test("GIS authorization verifies private Drive API, keeps token in memory and re
   await openPhotoTab(page);
   await page.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await expect(page.getByRole("tabpanel")).toContainText("Google Drive 已授權");
-  expect(requests).toEqual(["Bearer SYNTHETIC_MEMORY_TOKEN"]);
+  expect(requests.length).toBeGreaterThanOrEqual(1);
+  expect(requests.every(value => value === "Bearer SYNTHETIC_MEMORY_TOKEN")).toBe(true);
   const storage = await page.evaluate(() => localStorage.length + sessionStorage.length);
   expect(storage).toBeGreaterThan(0); // Existing source settings may be present.
   expect(await page.evaluate(() => Object.values(localStorage).concat(Object.values(sessionStorage)).join(" ")))

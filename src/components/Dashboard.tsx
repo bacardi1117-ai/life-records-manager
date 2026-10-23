@@ -200,7 +200,7 @@ export default function Dashboard({
           <div className="schedule-card">
             {cloud ? (
               <p className="cloud-notice">
-                請進入事項的「定期子項目」查看雲端保養計畫。完成紀錄請在事項詳細頁查看；照片尚未支援雲端同步。
+                請進入事項的「定期子項目」查看雲端保養計畫。完成紀錄請在事項詳細頁查看；事項照片請在詳細頁連接私人 Google Drive。
               </p>
             ) : (
               <>

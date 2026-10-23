@@ -76,7 +76,7 @@ export function cloudRepository(
     }
   }
   const unsupported = async (): Promise<never> => {
-    throw new Error("保養、歷史、備註與照片尚未支援雲端同步");
+    throw new Error("此操作尚未支援直接寫入雲端 Items");
   };
   return {
     list: async () => (await api.list()).map(fromSheets),

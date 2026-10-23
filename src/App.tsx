@@ -89,7 +89,7 @@ export default function App() {
               <div className="source-toolbar">
                 <span>
                   {state.status === "ready" && !state.stale
-                    ? "Items、保養計畫、完成紀錄與備註使用雲端；照片分頁可連接私人 Google Drive；附件上傳尚未提供。"
+                    ? "Items、保養計畫、完成紀錄與備註使用雲端；照片分頁使用私人 Google Drive 儲存事項照片。"
                     : "雲端資料尚未就緒，已停止寫入；不會自動回退為 Mock。"}
                 </span>
                 <a href="#/settings" className="text-button">

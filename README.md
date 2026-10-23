@@ -2,7 +2,7 @@
 
 生活事項紀錄、設備維護履歷與 Google 日曆定期提醒系統。
 
-目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；照片尚未支援雲端同步；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
+目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；事項照片使用私人 Google Drive；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -136,7 +136,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 已加入授權與基本連線檢查，尚未上傳附件。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、完成紀錄照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 已支援事項私人照片上傳與授權讀取。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -246,4 +246,10 @@ GitHub Actions 的 Repository Variable `VITE_GOOGLE_CLIENT_ID` 會在 Pages 的 
 
 正式網站中，先使用已有的 Google Sheets 連線開啟一筆生活事項，切到「照片」，按「連接私人 Google Drive」，使用已列為 OAuth 測試使用者的 Google 帳號完成授權。網站只請求 `https://www.googleapis.com/auth/drive.file`，取得 Access Token 後呼叫 Drive API 的唯讀清單端點檢查基本連線。授權及驗證成功才顯示「Google Drive 已授權」。可在同一區塊取消授權；Token 到期、授權視窗取消或 API 拒絕時會顯示錯誤並可重新授權。Token 僅在目前網頁的記憶體中，重新整理後需重新授權。
 
-此階段不使用 Apps Script Bridge 操作 Drive，也不提供檔案上傳、刪除、分享或公開連結；Mock 照片繼續存在原本的本機資料來源。模擬 GIS／Drive API 測試不代表正式 Google 帳號授權已驗證。
+Drive 操作不使用 Apps Script Bridge；目前不提供刪除、分享或公開連結；Mock 照片繼續存在原本的本機資料來源。模擬 GIS／Drive API 測試不代表正式 Google 帳號授權已驗證。
+
+## 私人 Google Drive 事項照片（第二階段）
+
+雲端事項的「照片」分頁可一次選取多張 JPG、PNG、WebP（每張最多 10 MB）。網站以使用者的 drive.file 授權，將照片放進私人 Drive 的「日日有序 Life Records」資料夾及對應 item_id 子資料夾；檔案的 appProperties 記錄 attachment_id、owner_type=item、owner_id=item_id。重新授權後會重新查詢檔案，縮圖透過授權 Drive API 讀取並使用暫時的 Blob URL 顯示，不使用公開圖片網址。
+
+每張照片的待送識別碼與 SHA-256 指紋暫存於該分頁的 sessionStorage；不儲存 Access Token。上傳回應不確定時，會先以相同 attachment_id 查詢，仍無法確認時停止再次送出，避免重複建立附件。資料夾 ID 的本機快取會再向 Drive 驗證，重新整理後先查找既有資料夾。此階段不支援刪除、分享、PDF 或保養完成紀錄照片。模擬測試不等於正式 Google Drive 上傳驗證。
