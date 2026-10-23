@@ -149,6 +149,10 @@ export class DriveAuth {
   }
   /** XHR is needed for upload progress; the token never leaves this service except in the API header. */
   upload(url: string, file: File, onProgress: (percent: number) => void): Promise<unknown> {
+    return this.uploadRange(url, file, 0, onProgress);
+  }
+  /** Resume the same Drive session from the server-confirmed next byte. */
+  uploadRange(url: string, file: File, start: number, onProgress: (percent: number) => void): Promise<unknown> {
     if (this.snapshot.state !== "authorized" || !this.token || this.deps.now() >= this.expiresAt) {
       if (this.token) this.expire();
       return Promise.reject(new Error("Google Drive 尚未授權或授權已過期，請重新授權"));
@@ -157,6 +161,8 @@ export class DriveAuth {
     if (endpoint.protocol !== "https:" || endpoint.hostname !== "www.googleapis.com" ||
         !endpoint.pathname.startsWith("/upload/drive/v3/files"))
       return Promise.reject(new Error("Google Drive 上傳工作階段網址不符"));
+    if (!Number.isSafeInteger(start) || start < 0 || start >= file.size)
+      return Promise.reject(new Error("Google Drive 續傳位置不符"));
     const token = this.token;
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -164,9 +170,9 @@ export class DriveAuth {
       xhr.responseType = "json";
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
       xhr.setRequestHeader("Content-Type", file.type);
-      xhr.setRequestHeader("Content-Range", `bytes 0-${file.size - 1}/${file.size}`);
+      xhr.setRequestHeader("Content-Range", `bytes ${start}-${file.size - 1}/${file.size}`);
       xhr.upload.onprogress = event => {
-        if (event.lengthComputable) onProgress(Math.min(99, Math.floor(event.loaded / event.total * 100)));
+        if (event.lengthComputable) onProgress(Math.min(99, Math.floor((start + event.loaded) / file.size * 100)));
       };
       xhr.onerror = () => reject(new DriveUploadError("上傳連線中斷，結果尚未確認；請先核對原附件", true));
       xhr.ontimeout = () => reject(new DriveUploadError("上傳逾時，結果尚未確認；請先核對原附件", true));
@@ -177,7 +183,7 @@ export class DriveAuth {
         } else if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
         else reject(new DriveUploadError(`Google Drive 上傳回應 HTTP ${xhr.status}；請先核對原附件`, true));
       };
-      xhr.send(file);
+      xhr.send(start ? file.slice(start) : file);
     });
   }
   revoke() {

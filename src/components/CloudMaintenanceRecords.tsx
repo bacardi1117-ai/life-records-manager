@@ -59,7 +59,7 @@ export function CloudHistoryList({
               {itemId && store && record.item_id === itemId && <div className="record-photo-area">
                 <button type="button" className="text-button" onClick={() =>
                   setOpenPhotoRecord(openPhotoRecord === record.record_id ? null : record.record_id)}>
-                  {openPhotoRecord === record.record_id ? "收合照片" : "查看照片／上傳"}
+                  {openPhotoRecord === record.record_id ? "收合照片與附件" : "查看照片與附件／上傳"}
                 </button>
                 {openPhotoRecord === record.record_id && <DriveRecordConnection
                   key={`${itemId}:${record.record_id}`} itemId={itemId} recordId={record.record_id} store={store} />}
