@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
-import { DrivePhotosRepository, validateDrivePhoto, type DriveTransport } from "../src/api/drivePhotos";
+import { DrivePhotosRepository, validateDrivePdf, validateDrivePhoto, type DriveTransport } from "../src/api/drivePhotos";
 import { DriveUploadError } from "../src/api/driveAuth";
 
 const png = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]);
 function file(name = "私密照片.png") { return new File([png], name, { type: "image/png" }); }
+const pdf = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF");
+function pdfFile(name = "私人文件.pdf", bytes: Uint8Array = pdf) { return new File([bytes], name, { type: "application/pdf" }); }
 function response(data: unknown, status = 200, headers?: HeadersInit): Response {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", ...headers } });
 }
 function fakeDrive() {
   const files: Array<Record<string, unknown>> = [];
-  let serial = 0, uploadCalls = 0, failUpload = false, failTrash = false;
+  let serial = 0, uploadCalls = 0, failUpload = false, failTrash = false, resumeAt: number | null = null;
+  const payloads = new Map<string, File>();
   let metadata: Record<string, unknown> | null = null;
   const request = vi.fn(async (raw: string, init: RequestInit = {}) => {
     const url = new URL(raw), method = init.method ?? "GET";
@@ -32,7 +35,15 @@ function fakeDrive() {
       target.trashed = true;
       return response({ id: target.id, trashed: true });
     }
-    if (url.searchParams.has("alt")) return new Response(png, { headers: { "Content-Type": "image/png" } });
+    if (method === "PUT" && url.pathname.startsWith("/upload/")) {
+      if (resumeAt === null) return response({}, 503);
+      return new Response(null, { status: 308, headers: { Range: `bytes=0-${resumeAt - 1}` } });
+    }
+    if (url.searchParams.has("alt")) {
+      const uploaded = Array.from(payloads.entries()).find(([key]) => url.pathname.endsWith(`/${key}`))?.[1];
+      return uploaded ? new Response(await uploaded.arrayBuffer(), { headers: { "Content-Type": uploaded.type } })
+        : new Response(png, { headers: { "Content-Type": "image/png" } });
+    }
     const found = files.find(row => url.pathname.endsWith(`/${row.id}`));
     if (found) return response({ ...found, trashed: found.trashed ?? false });
     if (url.pathname !== "/drive/v3/files") return response({}, 404);
@@ -50,16 +61,25 @@ function fakeDrive() {
     });
     return response({ files: rows });
   });
-  const upload = vi.fn(async (_url: string, _file: File, progress: (value: number) => void) => {
+  const upload = vi.fn(async (_url: string, uploadedFile: File, progress: (value: number) => void) => {
     uploadCalls++;
     if (failUpload) throw new DriveUploadError("模擬不確定結果", true);
     progress(55);
-    const row = { ...metadata!, id: `photo-${++serial}`, createdTime: "2026-10-23T12:00:00Z", size: png.length };
+    const row = { ...metadata!, id: `photo-${++serial}`, createdTime: "2026-10-23T12:00:00Z", size: uploadedFile.size };
     files.push(row);
+    payloads.set(row.id, uploadedFile);
     return row;
   });
-  return { files, request, upload, transport: { request, upload } as DriveTransport,
-    fail: (value: boolean) => { failUpload = value; }, failTrash: (value: boolean) => { failTrash = value; }, calls: () => uploadCalls };
+  const uploadRange = vi.fn(async (_url: string, uploadedFile: File, start: number, progress: (value: number) => void) => {
+    if (start !== resumeAt) throw new Error("續傳位元組不符");
+    progress(90);
+    const row = { ...metadata!, id: `photo-${++serial}`, createdTime: "2026-10-23T12:00:00Z", size: uploadedFile.size };
+    files.push(row); payloads.set(row.id, uploadedFile);
+    return row;
+  });
+  return { files, request, upload, uploadRange, transport: { request, upload, uploadRange } as DriveTransport,
+    fail: (value: boolean) => { failUpload = value; }, failTrash: (value: boolean) => { failTrash = value; },
+    resume: (value: number | null) => { resumeAt = value; }, calls: () => uploadCalls };
 }
 beforeEach(() => { vi.stubGlobal("crypto", webcrypto); sessionStorage.clear(); });
 it("accepts only matching JPG/PNG/WebP content and at most 10 MB", async () => {
@@ -151,4 +171,59 @@ it("keeps record, other record and item attachments separate even when their IDs
   expect(await repo.list("record-one")).toHaveLength(1);
   sessionStorage.removeItem("life-records-manager:drive-folders:v1");
   expect(await new DrivePhotosRepository(drive.transport).list("record-one")).toHaveLength(1);
+});
+it("validates PDF MIME, header and 20 MB limit without accepting PDFs as photos", async () => {
+  await expect(validateDrivePdf(pdfFile())).resolves.toBeUndefined();
+  const maximum = new Uint8Array(20 * 1024 * 1024); maximum.set(pdf);
+  await expect(validateDrivePdf(pdfFile("最大.pdf", maximum))).resolves.toBeUndefined();
+  await expect(validateDrivePdf(pdfFile("超過.pdf", new Uint8Array(20 * 1024 * 1024 + 1)))).rejects.toThrow("20 MB");
+  await expect(validateDrivePdf(pdfFile("錯誤.pdf", new TextEncoder().encode("not a pdf")))).rejects.toThrow("內容");
+  await expect(validateDrivePdf(new File([pdf], "x.txt", { type: "text/plain" }))).rejects.toThrow("僅支援 PDF");
+  await expect(validateDrivePhoto(pdfFile())).rejects.toThrow("僅支援 JPG");
+});
+it("shares folders while isolating PDF and photo, item and record attachments", async () => {
+  const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);
+  const record = { type: "record" as const, id: "record-one" };
+  const document = await repo.uploadPdf(record, pdfFile(), await repo.preparePdf(record, pdfFile()), () => {});
+  await repo.uploadOne(record, file(), await repo.prepare(record, file()), () => {});
+  await repo.uploadPdf("record-one", pdfFile(), await repo.preparePdf("record-one", pdfFile()), () => {});
+  expect(document).toMatchObject({ mimeType: "application/pdf", ownerType: "record", ownerId: "record-one" });
+  expect(await repo.listPdf(record)).toHaveLength(1);
+  expect(await repo.list(record)).toHaveLength(1);
+  expect(await repo.listPdf({ type: "record", id: "record-two" })).toHaveLength(0);
+  expect(await repo.listPdf("record-one")).toHaveLength(1);
+  expect((await repo.readPdf(document)).type).toBe("application/pdf");
+  await expect(repo.trashPdf("record-one", document)).rejects.toThrow("不屬於");
+  const row = drive.files.find(value => value.id === document.id)!;
+  (row.appProperties as Record<string,string>).attachment_id = "wrong";
+  await expect(repo.trashPdf(record, document)).rejects.toThrow("識別碼");
+  (row.appProperties as Record<string,string>).attachment_id = document.attachmentId;
+  await repo.trashPdf(record, document);
+  expect(await repo.listPdf(record)).toHaveLength(0);
+  expect(await repo.list(record)).toHaveLength(1);
+  expect(await repo.listPdf("record-one")).toHaveLength(1);
+});
+it("queries the same resumable PDF session and resumes at Drive's confirmed byte", async () => {
+  const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);
+  const large = new Uint8Array(11 * 1024 * 1024); large.set(pdf);
+  const documentFile = pdfFile("大檔.pdf", large);
+  const pending = await repo.preparePdf("item-one", documentFile);
+  drive.fail(true); drive.resume(256 * 1024);
+  const progress = vi.fn();
+  const result = await repo.uploadPdf("item-one", documentFile, pending, progress);
+  expect(result.attachmentId).toBe(pending.attachmentId);
+  expect(drive.uploadRange).toHaveBeenCalledWith(expect.any(String), documentFile, 256 * 1024, expect.any(Function));
+  expect(drive.calls()).toBe(1);
+  expect(progress).toHaveBeenCalledWith(100);
+  expect(await repo.listPdf("item-one")).toHaveLength(1);
+  expect((await repo.readPdf(result)).size).toBe(documentFile.size);
+});
+it("keeps the PDF UUID and blocks a second upload when session recovery is uncertain", async () => {
+  const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);
+  const pending = await repo.preparePdf("item-one", pdfFile());
+  drive.fail(true);
+  await expect(repo.uploadPdf("item-one", pdfFile(), pending, () => {})).rejects.toThrow("未確認");
+  expect((await repo.preparePdf("item-one", pdfFile())).attachmentId).toBe(pending.attachmentId);
+  await expect(repo.uploadPdf("item-one", pdfFile(), pending, () => {})).rejects.toThrow("未確認");
+  expect(drive.calls()).toBe(1);
 });

@@ -5,6 +5,7 @@ import { drivePhotos } from "../api/drivePhotos";
 import type { DrivePhoto, PendingPhoto, PhotoOwner } from "../api/drivePhotos";
 import type { ItemsStore } from "../api/itemsStore";
 import { Modal } from "./Forms";
+import DrivePdfPanel from "./DrivePdfPanel";
 
 interface UploadEntry {
   key: string;
@@ -15,8 +16,9 @@ interface UploadEntry {
   error: string;
 }
 const errorText = (error: unknown) => error instanceof Error ? error.message : "Google Drive 操作失敗";
-export default function DriveConnection({ itemId }: { itemId: string }) {
-  return <DriveConnectionBase owner={{ type: "item", id: itemId }} />;
+export default function DriveConnection({ itemId, store }: { itemId: string; store: ItemsStore }) {
+  return <DriveConnectionBase owner={{ type: "item", id: itemId }}
+    ensureSaved={() => store.confirmStoredItem(itemId)} />;
 }
 export function DriveRecordConnection({ itemId, recordId, store }: {
   itemId: string; recordId: string; store: ItemsStore;
@@ -33,7 +35,7 @@ function DriveConnectionBase({ owner, ensureSaved }: { owner: PhotoOwner; ensure
       {snapshot.state === "authorized" && <p role="status">Google Drive 已授權</p>}
       {snapshot.state === "loading" && <p role="status">正在載入 Google 授權元件…</p>}
       {snapshot.state === "authorizing" && <p role="status">正在等待 Google 授權並驗證 Drive 連線…</p>}
-      {snapshot.state === "idle" && <p>連接後可上傳及查看{owner.type === "record" ? "此保養完成紀錄" : "此生活事項"}的私人照片。</p>}
+      {snapshot.state === "idle" && <p>連接後可上傳及查看{owner.type === "record" ? "此保養完成紀錄" : "此生活事項"}的私人照片與 PDF 文件。</p>}
       {snapshot.state === "revoked" && <p role="status">已取消 Google Drive 授權</p>}
       {snapshot.error && <p className="error-banner" role="alert">{snapshot.error}</p>}
       {snapshot.state !== "authorized" && <button className="primary" type="button"
@@ -44,8 +46,9 @@ function DriveConnectionBase({ owner, ensureSaved }: { owner: PhotoOwner; ensure
       {snapshot.state === "authorized" && <>
         <button className="secondary" type="button" onClick={() => driveAuth.revoke()}>取消 Google Drive 授權</button>
         <DrivePhotosPanel key={`${owner.type}:${owner.id}`} owner={owner} ensureSaved={ensureSaved} />
+        <DrivePdfPanel key={`pdf:${owner.type}:${owner.id}`} owner={owner} ensureSaved={ensureSaved} />
       </>}
-      <p className="muted small">僅使用 drive.file 權限。照片儲存在私人 Drive；刪除會移入私人垃圾桶，不產生公開連結或公開分享。</p>
+      <p className="muted small">僅使用 drive.file 權限。照片及 PDF 儲存在私人 Drive；刪除會移入垃圾桶，不產生公開分享連結。</p>
     </>}
   </section>;
 }

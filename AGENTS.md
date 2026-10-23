@@ -77,3 +77,9 @@
 - 沿用同一 Drive Adapter 與 UI；紀錄照片的 `owner_type=record`、`owner_id=record_id`、`attachment_id=UUID`。資料夾及待送指紋按 owner 型別與 ID 隔離，禁止混入事項照片或其他紀錄。
 - 僅向已從 Sheets 載入的完成紀錄顯示入口；每次上傳、更換或移入垃圾桶前以 `getMaintenanceRecord` 確認 record_id 仍存在且 item_id 為目前事項。Drive 檔案操作前重新核對 file ID、owner_type、owner_id、attachment_id；不使用公開 Apps Script 執行 Drive 操作。
 - 不修改 Sheets Attachments 工作表、Apps Script、Mock 照片資料或 OAuth 設定；不提交私人照片或 Token。模擬測試不代表正式 Drive 操作驗證。
+
+## 私人 Google Drive PDF 文件
+
+- 沿用 `src/api/drivePhotos.ts` 的 Drive 授權、擁有者資料夾、附件 UUID、metadata 核對及垃圾桶操作；PDF 與照片按 MIME 分開顯示。PDF 僅接受 `application/pdf`、`%PDF-` 標頭與 20 MB 上限。
+- 事項及完成紀錄的 PDF 上傳、刪除前分別透過 ItemsStore 核對已儲存的 item_id 或 record_id；不同 owner 的文件不可混用。PDF 預覽與下載只用授權 API 取得 Blob，預覽關閉須釋放 Blob URL，不可建立公開分享連結。
+- 大檔使用同一 Drive resumable session，連線中斷先查詢已收位元組再續傳；結果無法確認時保留原 attachment_id 並停止新建。Access Token 僅留記憶體；不修改 Apps Script、Sheets Attachments、Mock 模式或 OAuth scope。

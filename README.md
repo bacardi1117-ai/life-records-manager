@@ -4,7 +4,7 @@
 
 目前首頁與詳細頁共用同一套資料存取層，可選擇 Google Sheets 雲端模式或本機 Mock 模式。雲端使用現有 Apps Script Items CRUD、MaintenancePlans 保養計畫及 MaintenanceRecords 完成紀錄；事項照片使用私人 Google Drive；Google 日曆提醒由私人 Apps Script 定期處理，網站透過 Web App v3.1 讀取同步紀錄。
 
-雲端事項的「照片」分頁及每筆已儲存完成紀錄的「查看照片／上傳」區塊，可用已授權的私人 Google Drive 上傳多張 JPG／PNG／WebP（每張最多 10 MB）、放大預覽、切換照片、更換照片，或將照片移入 Drive 垃圾桶。更換會先上傳並核對新照片，再處理舊照片；若第二步失敗，畫面會保留新照片並提示部分完成，可用同一草稿重試。刪除和更換只針對目前 owner 且具備正確 `appProperties` 的應用程式照片。Token 僅在記憶體中，重新整理後需重新授權。Mock 照片與雲端 Drive 照片互不轉存。本功能不建立公開分享連結，也不支援永久刪除或 PDF。
+雲端事項的「照片」分頁及每筆已儲存完成紀錄的「查看照片與附件／上傳」區塊，可用已授權的私人 Google Drive 上傳多張 JPG／PNG／WebP（每張最多 10 MB）及 PDF（每份最多 20 MB）。照片可放大、切換、更換；PDF 可站內預覽或下載。兩者均可移入 Drive 垃圾桶。更換照片會先上傳並核對新照片，再處理舊照片；若第二步失敗，畫面會保留新照片並提示部分完成。所有操作只針對目前 owner 且具備正確 `appProperties` 的附件。Token 僅在記憶體中，重新整理後需重新授權。Mock 資料與私人 Drive 附件互不轉存；不建立公開分享連結或執行永久刪除。
 
 ## 技術架構
 - 前端：React + TypeScript + Vite
@@ -258,4 +258,10 @@ Drive 操作不使用 Apps Script Bridge；不提供永久刪除、分享或公�
 
 ## 私人 Google Drive 保養完成紀錄照片
 
-雲端「歷史紀錄」中的每筆完成紀錄，以及定期子項目展開的完成紀錄，均可各自展開「查看照片／上傳」。紀錄照片與事項照片沿用同一 Drive Adapter，但使用獨立資料夾及 `appProperties`：`attachment_id` 為 UUID、`owner_type=record`、`owner_id=record_id`。上傳、更換和移入垃圾桶前會向 Google Sheets 讀回原 `record_id`，確認紀錄確實存在且屬於目前事項；每次 Drive 操作也會核對檔案擁有者與附件 ID。不同紀錄、事項照片與 Mock 照片不互相混用。網站不修改 Sheets Attachments 工作表或 Apps Script。模擬測試通過後，仍需在正式帳號驗證上傳、重新授權、放大預覽、更換與移入垃圾桶。
+雲端「歷史紀錄」中的每筆完成紀錄，以及定期子項目展開的完成紀錄，均可各自展開「查看照片與附件／上傳」。紀錄照片與事項照片沿用同一 Drive Adapter，但使用獨立資料夾及 `appProperties`：`attachment_id` 為 UUID、`owner_type=record`、`owner_id=record_id`。上傳、更換和移入垃圾桶前會向 Google Sheets 讀回原 `record_id`，確認紀錄確實存在且屬於目前事項；每次 Drive 操作也會核對檔案擁有者與附件 ID。不同紀錄、事項照片與 Mock 照片不互相混用。網站不修改 Sheets Attachments 工作表或 Apps Script。模擬測試通過後，仍需在正式帳號驗證上傳、重新授權、放大預覽、更換與移入垃圾桶。
+
+## 私人 Google Drive PDF 文件
+
+事項與已儲存保養完成紀錄的照片區塊也提供獨立 PDF 文件清單，可一次選取多份 `application/pdf`，每份最多 20 MB；清單顯示檔名、大小、建立日期。網站檢查檔案 MIME 與 `%PDF-` 標頭，使用原本的 Drive 資料夾、`attachment_id` 和 resumable upload session。網路中斷時先查詢同一 session 的已收位元組並續傳；結果仍不明時保留原附件 ID，核對前不以新 ID 再建檔。事項或紀錄上傳前會再次從 Sheets 確認該筆已儲存。
+
+預覽時由授權 Drive API 取得內容，短暫的 Blob URL 在關閉視窗時釋放；瀏覽器無法預覽時可按「下載原始 PDF」。刪除會先核對 Drive file ID、`owner_type`、`owner_id`、`attachment_id`，再以 `trashed=true` 移入垃圾桶。不修改 Apps Script 或 Sheets Attachments 工作表，不提供公開連結。模擬測試不代表正式 Drive PDF 上傳、續傳、預覽或刪除已驗證。

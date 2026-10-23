@@ -808,18 +808,28 @@ export class ItemsStore {
   };
   openCompletionDraft = (itemId: string, plan: MaintenancePlan) =>
     recordDrafts.open(itemId, plan);
+  confirmStoredItem = async (itemId: string) => {
+    if (!this.repository || this.state.mode !== "cloud" || this.state.status !== "ready" ||
+        this.state.stale || this.detailId !== itemId || this.state.detailState !== "ready" ||
+        this.state.selected?.id !== itemId)
+      throw new Error("生活事項尚未儲存或雲端資料未就緒，不能操作附件");
+    const generation = this.epoch;
+    const item = await this.repository.get(itemId);
+    if (generation !== this.epoch || this.detailId !== itemId || item.id !== itemId)
+      throw new Error("Google Sheets 未確認此生活事項，不能操作附件");
+  };
   /** Drive attachments are allowed only for a record the backend can read back. */
   confirmStoredRecord = async (itemId: string, recordId: string) => {
     if (!this.recordsRepository || this.state.mode !== "cloud" ||
         this.state.status !== "ready" || this.state.stale || this.detailId !== itemId ||
         this.state.records.itemId !== itemId || this.state.records.status !== "ready" ||
         !this.state.records.rows.some(row => row.record_id === recordId))
-      throw new Error("完成紀錄尚未儲存或雲端資料未就緒，不能操作照片");
+      throw new Error("完成紀錄尚未儲存或雲端資料未就緒，不能操作附件");
     const generation = this.epoch;
     const record = await this.recordsRepository.get(recordId);
     if (generation !== this.epoch || this.detailId !== itemId ||
         !record || record.item_id !== itemId || record.record_id !== recordId)
-      throw new Error("Google Sheets 未確認此完成紀錄，不能操作照片");
+      throw new Error("Google Sheets 未確認此完成紀錄，不能操作附件");
   };
   getCompletionDraft = (itemId: string, planId: string) =>
     recordDrafts.read(itemId, planId);
