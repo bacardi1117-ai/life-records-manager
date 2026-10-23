@@ -190,7 +190,7 @@ main {
   gap: 7px;
   padding: 11px 18px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -284,7 +284,7 @@ main {
   color: var(--muted);
 }
 .small {
-  font-size: 12px;
+  font-size: 13px;
 }
 .toolbar {
   display: flex;
@@ -689,7 +689,7 @@ dd {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--green);
   white-space: nowrap;
 }
@@ -698,7 +698,7 @@ dd {
 }
 .tab-panel .section-heading p {
   margin-top: 6px;
-  font-size: 11px;
+  font-size: 14px;
 }
 .task-row {
   display: flex;
@@ -723,10 +723,10 @@ dd {
   flex: 1;
 }
 .task-info h3 {
-  font-size: 14px;
+  font-size: 18px;
 }
 .task-info p {
-  font-size: 10px;
+  font-size: 15px;
   color: #879580;
   margin: 5px 0;
 }
@@ -751,7 +751,7 @@ dd {
 }
 .task-actions .secondary {
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: 13px;
 }
 .icon-button {
   display: grid;
@@ -787,11 +787,11 @@ dd {
   margin-bottom: 7px;
 }
 .timeline h3 {
-  font-size: 14px;
+  font-size: 18px;
 }
 .timeline p,
 .note p {
-  font-size: 12px;
+  font-size: 15px;
   line-height: 1.8;
   color: #71816a;
   white-space: pre-wrap;
@@ -815,11 +815,15 @@ dd {
   border-top: 1px solid var(--border);
 }
 .note time {
-  font-size: 10px;
+  font-size: 13px;
   color: #9aa491;
 }
 .note p {
   margin-top: 7px;
+  font-size: 16px;
+}
+.note h3 {
+  font-size: 18px;
 }
 .gallery {
   display: grid;
@@ -888,7 +892,7 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: 14px;
   color: #59705e;
 }
 .field-row {
@@ -906,7 +910,7 @@ textarea {
   color: #34513c;
   min-width: 0;
   max-width: 100%;
-  font-size: 13px;
+  font-size: 15px;
 }
 input:focus,
 select:focus,
@@ -918,7 +922,7 @@ textarea {
   resize: vertical;
 }
 .hint {
-  font-size: 10px;
+  font-size: 13px;
   color: #8a9a80;
 }
 .form-description {
@@ -1190,16 +1194,16 @@ textarea {
     font-size: 14px;
   }
   .text-button {
-    font-size: 11px;
+    font-size: 13px;
   }
   .task-row {
     gap: 10px;
   }
   .task-info p {
-    font-size: 10px;
+    font-size: 15px;
   }
   .task-actions .secondary {
-    font-size: 10px;
+    font-size: 13px;
     padding: 8px;
   }
   .task-icon {
@@ -1398,32 +1402,82 @@ textarea {
   border-radius: 12px;
   background: #f8faf6;
 }
-.calendar-sync-status h4 {
-  margin: 0 0 10px;
-  font-size: 13px;
+.calendar-sync-toggle {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  text-align: left;
+}
+.calendar-sync-toggle-title {
   color: #526c4b;
+  font-size: 15px;
+  font-weight: 600;
 }
-.calendar-sync-status dl {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px 14px;
-  margin: 0;
-  font-size: 11px;
-}
-.calendar-sync-status dt {
-  color: #73836f;
-}
-.calendar-sync-status dd {
-  margin: 0;
+.calendar-sync-toggle-status {
+  margin-left: auto;
+  color: #526c4b;
+  font-size: 15px;
+  text-align: right;
   overflow-wrap: anywhere;
 }
-.calendar-sync-status .muted {
-  margin: 10px 0 0;
+.calendar-sync-toggle:focus-visible {
+  outline: 3px solid #91bdaa;
+  outline-offset: 4px;
+  border-radius: 5px;
+}
+.calendar-sync-content {
+  padding-top: 12px;
+}
+.calendar-sync-content dl {
+  display: grid;
+  grid-template-columns: minmax(9rem, 34%) minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 16px;
+}
+.calendar-sync-content dt {
+  color: #73836f;
+  font-size: 15px;
+  margin-top: 0;
+}
+.calendar-sync-content dd {
+  margin: 0;
+  color: #526c4b;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.calendar-sync-content .muted {
+  font-size: 14px;
+  line-height: 1.6;
 }
 .calendar-sync-error {
   margin: 10px 0 0;
   color: #a34e4e;
+  font-size: 14px;
   overflow-wrap: anywhere;
+}
+.calendar-sync-status .calendar-sync-content {
+  min-width: 0;
+}
+.cloud-plan .task-info h3 {
+  font-size: 18px;
+}
+.cloud-plan .task-info p {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-plan .task-info .status {
+  display: inline-block;
+  font-size: 13px;
+  margin-top: 3px;
+}
+.cloud-plan .task-actions .secondary,
+.cloud-plan .task-actions .text-button {
+  font-size: 14px;
 }
 .cloud-plan .task-info {
   min-width: 0;
@@ -1442,6 +1496,7 @@ textarea {
 }
 .cloud-plan-form label {
   min-width: 0;
+  font-size: 14px;
 }
 
 .cloud-plan .plan-history {
@@ -1457,6 +1512,31 @@ textarea {
 }
 .cloud-history p {
   overflow-wrap: anywhere;
+  font-size: 15px;
+}
+.cloud-history h3 {
+  font-size: 18px;
+}
+.cloud-history summary {
+  font-size: 15px;
+}
+@media (max-width: 520px) {
+  .calendar-sync-toggle {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .calendar-sync-toggle-status {
+    flex-basis: calc(100% - 30px);
+    margin-left: 0;
+    text-align: left;
+  }
+  .calendar-sync-toggle > svg {
+    margin-left: auto;
+  }
+  .calendar-sync-content dl {
+    grid-template-columns: minmax(7rem, 36%) minmax(0, 1fr);
+    gap: 6px 10px;
+  }
 }
 @media (max-width: 760px) {
   .cloud-plan .plan-history {

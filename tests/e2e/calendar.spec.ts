@@ -8,7 +8,12 @@ import {
 } from "../fixtures/googleBridge";
 
 const enabled = process.env.CALENDAR_SYNC_E2E_ENABLED !== "false";
-async function open(page: Page) {
+async function expandCalendar(page: Page, name = samplePlan.name) {
+  const region = card(page, name);
+  const toggle = region.getByRole("button", { name: /Google Calendar 提醒/ });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+}
+async function open(page: Page, expandMainPlan = true) {
   await page.goto("./#/settings");
   await page.getByLabel("Web App /exec URL").fill(TEST_WEB_APP);
   await page.getByRole("button", { name: "連線並使用 Google Sheets" }).click();
@@ -17,6 +22,7 @@ async function open(page: Page) {
   ).toBeVisible();
   await page.getByRole("link", { name: "返回生活事項首頁" }).click();
   await page.locator(".item-card").filter({ hasText: sampleItem.name }).click();
+  if (expandMainPlan) await expandCalendar(page);
 }
 const card = (page: Page, name = samplePlan.name) =>
   page.getByRole("region", { name: `${name} Google Calendar 提醒` });
@@ -55,6 +61,8 @@ test.describe("CalendarSync read-only API simulation", () => {
     backend.calendarStatuses[samplePlan.plan_id] = synced();
     await open(page);
     await expect(status(page)).toHaveText("Google Calendar 已同步紀錄");
+    await expect(card(page).getByRole("button", { name: /Google Calendar 提醒/ }))
+      .toContainText("Google Calendar 已同步紀錄");
     await expect(card(page)).toContainText("2026-10-22T04:00:00Z");
     await expect(card(page)).not.toContainText("TEST_ONLY_NOT_REAL");
     backend.calendarStatuses[samplePlan.plan_id] = {
@@ -76,6 +84,8 @@ test.describe("CalendarSync read-only API simulation", () => {
       };
       await page.getByRole("button", { name: "重新讀取保養計畫" }).click();
       await expect(status(page)).toHaveText(expected);
+      await expect(card(page).getByRole("button", { name: /Google Calendar 提醒/ }))
+        .toContainText(expected);
       if (errorMessage) await expect(card(page)).toContainText(errorMessage);
     }
   });
@@ -129,9 +139,11 @@ test.describe("CalendarSync read-only API simulation", () => {
     };
     backend.calendarDelay[samplePlan.plan_id] = 300;
     await open(page);
+    await expandCalendar(page, "第二保養");
     await expect(status(page, "第二保養")).toHaveText("提醒已停用");
     await page.locator(".back-link").click();
     await page.locator(".item-card").filter({ hasText: "另一件設備" }).click();
+    await expandCalendar(page, "另一保養");
     await expect(status(page, "另一保養")).toHaveText("同步失敗");
     await page.waitForTimeout(350);
     await expect(card(page, "另一保養")).toContainText("另一件錯誤");
@@ -195,5 +207,64 @@ test.describe("CalendarSync read-only API simulation", () => {
     await expect(
       page.getByText("Google Calendar 提醒", { exact: true }),
     ).toHaveCount(0);
+  });
+
+  test("Calendar accordion starts closed, is keyboard operable and does not write", async ({ page }) => {
+    const backend = await mockGoogleBridge(page);
+    backend.plans.push({ ...samplePlan, plan_id: "second-plan", name: "第二保養" });
+    await open(page, false);
+    const first = card(page);
+    const firstToggle = first.getByRole("button", { name: /Google Calendar 提醒/ });
+    const second = card(page, "第二保養");
+    const secondToggle = second.getByRole("button", { name: /Google Calendar 提醒/ });
+    await expect(firstToggle).toContainText("尚未同步");
+    await expect(secondToggle).toContainText("尚未同步");
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(secondToggle).toHaveAttribute("aria-expanded", "false");
+    const firstPanel = await firstToggle.getAttribute("aria-controls");
+    await expect(first.locator(`[id="${firstPanel}"]`)).toBeHidden();
+    const countActions = (actions: string[]) => backend.calls.filter(call => actions.includes(call.action)).length;
+    const writeCount = countActions(["createMaintenancePlan", "updateMaintenancePlan", "disableMaintenancePlan", "enableMaintenancePlan"]);
+    const statusReadCount = countActions(["getCalendarSyncStatus"]);
+    await firstToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(first.locator(`[id="${firstPanel}"]`)).toBeVisible();
+    await expect(secondToggle).toHaveAttribute("aria-expanded", "false");
+    await secondToggle.click();
+    await expect(secondToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(firstToggle).toHaveAttribute("aria-expanded", "true");
+    expect(countActions(["createMaintenancePlan", "updateMaintenancePlan", "disableMaintenancePlan", "enableMaintenancePlan"])).toBe(writeCount);
+    expect(countActions(["getCalendarSyncStatus"])).toBe(statusReadCount);
+  });
+
+  test("calendar values align in desktop grid and stay within the mobile viewport", async ({ page }, testInfo) => {
+    await mockGoogleBridge(page);
+    await open(page);
+    const region = card(page);
+    const rows = await region.locator("dl").evaluate(dl => {
+      const terms = [...dl.querySelectorAll("dt")];
+      const values = [...dl.querySelectorAll("dd")];
+      return terms.map((term, index) => ({
+        labelTop: term.getBoundingClientRect().top,
+        valueTop: values[index].getBoundingClientRect().top,
+        labelSize: getComputedStyle(term).fontSize,
+        valueSize: getComputedStyle(values[index]).fontSize,
+      }));
+    });
+    expect(rows).toHaveLength(4);
+    for (const row of rows) expect(Math.abs(row.labelTop - row.valueTop)).toBeLessThan(2);
+    expect(rows[0].labelSize).toBe("15px");
+    expect(rows[0].valueSize).toBe("16px");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    if (testInfo.project.name === "desktop") {
+      const repeated = await region.locator("dl").evaluate(dl => {
+        const terms = [...dl.querySelectorAll("dt")];
+        const values = [...dl.querySelectorAll("dd")];
+        return terms.every((term, index) => Math.abs(term.getBoundingClientRect().top - values[index].getBoundingClientRect().top) < 2);
+      });
+      expect(repeated).toBe(true);
+    }
   });
 });
