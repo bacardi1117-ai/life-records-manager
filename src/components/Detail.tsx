@@ -272,7 +272,7 @@ export default function Detail({
                 readOnly={readOnly}
               />
             ) : cloud && tab === "照片" ? (
-              <DriveConnection />
+              <DriveConnection itemId={item.id} />
             ) : cloud ? (
               <div className="empty">
                 <h2>{tab}尚未支援雲端同步</h2>

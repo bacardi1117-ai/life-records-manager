@@ -1472,3 +1472,14 @@ textarea {
 }
 .drive-connection p { margin: 0; }
 .drive-connection button { justify-self: start; }
+
+.drive-photo-panel { display: grid; gap: 1rem; margin-top: 1rem; }
+.drive-photo-panel label { display: grid; gap: .4rem; }
+.drive-photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .8rem; width: 100%; }
+.drive-photo-card { display: grid; gap: .4rem; min-width: 0; }
+.drive-photo-card img, .drive-photo-placeholder { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: .7rem; background: #f3f5f0; }
+.drive-photo-placeholder { display: grid; place-items: center; padding: .5rem; text-align: center; }
+.drive-photo-card span { overflow-wrap: anywhere; }
+.drive-upload-list { display: grid; gap: .5rem; }
+.drive-upload-list > div { display: grid; gap: .35rem; }
+.drive-upload-list progress { width: 100%; }

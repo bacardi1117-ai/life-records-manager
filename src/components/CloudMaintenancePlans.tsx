@@ -201,7 +201,7 @@ export default function CloudMaintenancePlans({
         {calendarSync.enabled
           ? "網站僅讀取同步狀態，不提供日曆寫入或手動同步。"
           : "網站目前尚未連接同步狀態唯讀 API。"}
-        Google Drive 照片仍未支援雲端同步。
+        保養完成紀錄照片仍未支援雲端同步。
       </p>
       {completing && (
         <Modal title="完成保養" close={() => !busy && setCompleting(null)}>

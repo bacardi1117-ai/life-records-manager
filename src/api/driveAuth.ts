@@ -132,6 +132,54 @@ export class DriveAuth {
       this.emit("error", error instanceof Error ? error.message : "Google Drive 授權失敗，請重新授權");
     }
   }
+  /** Use the in-memory token for a private Drive API request. */
+  async request(url: string, init: RequestInit = {}): Promise<Response> {
+    if (this.snapshot.state !== "authorized" || !this.token || this.deps.now() >= this.expiresAt) {
+      if (this.token) this.expire();
+      throw new Error("Google Drive 尚未授權或授權已過期，請重新授權");
+    }
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${this.token}`);
+    const response = await this.deps.fetch(url, { ...init, headers, cache: "no-store" });
+    if (response.status === 401) {
+      this.expire();
+      throw new Error("Google Drive 授權已過期，請重新授權");
+    }
+    return response;
+  }
+  /** XHR is needed for upload progress; the token never leaves this service except in the API header. */
+  upload(url: string, file: File, onProgress: (percent: number) => void): Promise<unknown> {
+    if (this.snapshot.state !== "authorized" || !this.token || this.deps.now() >= this.expiresAt) {
+      if (this.token) this.expire();
+      return Promise.reject(new Error("Google Drive 尚未授權或授權已過期，請重新授權"));
+    }
+    const endpoint = new URL(url);
+    if (endpoint.protocol !== "https:" || endpoint.hostname !== "www.googleapis.com" ||
+        !endpoint.pathname.startsWith("/upload/drive/v3/files"))
+      return Promise.reject(new Error("Google Drive 上傳工作階段網址不符"));
+    const token = this.token;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", endpoint.href);
+      xhr.responseType = "json";
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.setRequestHeader("Content-Range", `bytes 0-${file.size - 1}/${file.size}`);
+      xhr.upload.onprogress = event => {
+        if (event.lengthComputable) onProgress(Math.min(99, Math.floor(event.loaded / event.total * 100)));
+      };
+      xhr.onerror = () => reject(new DriveUploadError("上傳連線中斷，結果尚未確認；請先核對原附件", true));
+      xhr.ontimeout = () => reject(new DriveUploadError("上傳逾時，結果尚未確認；請先核對原附件", true));
+      xhr.onload = () => {
+        if (xhr.status === 401) {
+          this.expire();
+          reject(new DriveUploadError("Google Drive 授權已過期，請先核對上傳結果再重新授權", true));
+        } else if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.response);
+        else reject(new DriveUploadError(`Google Drive 上傳回應 HTTP ${xhr.status}；請先核對原附件`, true));
+      };
+      xhr.send(file);
+    });
+  }
   revoke() {
     const token = this.token;
     const generation = ++this.generation;
@@ -145,5 +193,8 @@ export class DriveAuth {
       }); } catch { if (generation === this.generation) this.emit("error", "無法聯絡 Google 取消授權；本頁已清除 Token，請到 Google 帳戶檢查授權"); }
     }
   }
+}
+export class DriveUploadError extends Error {
+  constructor(message: string, public uncertain: boolean) { super(message); }
 }
 export const driveAuth = new DriveAuth(import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "");

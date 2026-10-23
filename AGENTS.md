@@ -62,5 +62,11 @@
 ## 私人 Google Drive 第一階段
 
 - OAuth 僅使用 Google Identity Services Token Client 與 drive.file scope；Client ID 從 GitHub Actions Variable 進入 Vite 建置，未設定時顯示未設定。
-- Access Token 僅保留在記憶體；不透過 Apps Script Bridge，不寫入 localStorage 或原有 Mock 照片資料。Drive API 僅驗證連線，不列出或展示私人檔案。
-- 模擬授權與 Drive API 測試不得宣稱正式 Google 帳號授權成功；本階段不提供上傳、刪除或分享。
+- Access Token 僅保留在記憶體；不透過 Apps Script Bridge，不寫入 localStorage 或原有 Mock 照片資料。Drive API 以授權 Token 讀寫私人事項照片；縮圖使用短暫 Blob URL，不使用公開連結。
+- 模擬授權與 Drive API 測試不得宣稱正式 Google 帳號授權成功；本階段提供事項照片上傳，不提供刪除、分享或保養紀錄附件。
+
+## 私人 Google Drive 事項照片
+
+- 專用根資料夾與 item_id 子資料夾必須先查詢及驗證快取再建立；附件 appProperties 必須包含 attachment_id、owner_type=item、owner_id。
+- JPG、PNG、WebP 需檢查 MIME、檔案內容與 10 MB 上限。10 MB 上傳使用 Drive 續傳工作階段，XHR 只用於回報進度；未知結果保留相同 attachment_id，核對前禁止重新送出。
+- 私人照片透過授權 Drive API 讀取並用 Blob URL 預覽，切換事項或卸載元件時釋放。不得使用公開分享連結、Apps Script Bridge、Mock 照片資料或把 Token 寫入儲存空間。

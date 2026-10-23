@@ -231,7 +231,7 @@ export function ItemForm({
       {cloud && (
         <p className="hint">
           只儲存實際變更的 Items
-          基本欄位；保養計畫請於定期子項目編輯。備註請在詳細頁管理；照片尚未支援雲端同步。
+          基本欄位；保養計畫請於定期子項目編輯。備註請在詳細頁管理；照片請到詳細頁授權私人 Google Drive 後上傳。
         </p>
       )}
       {recover && (
