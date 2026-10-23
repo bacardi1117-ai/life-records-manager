@@ -1494,3 +1494,5 @@ textarea {
 .drive-upload-list { display: grid; gap: .5rem; }
 .drive-upload-list > div { display: grid; gap: .35rem; }
 .drive-upload-list progress { width: 100%; }
+.record-photo-area { margin-top: .8rem; }
+.record-photo-area .drive-connection { margin-top: .5rem; }

@@ -243,6 +243,8 @@ export default function Detail({
                   <Clock3 size={19} />
                 </div>
                 <CloudHistoryList
+                  itemId={item.id}
+                  store={store}
                   rows={records.itemId === item.id ? records.rows : []}
                   status={records.status}
                   error={records.error}

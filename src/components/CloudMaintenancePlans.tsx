@@ -158,6 +158,8 @@ export default function CloudMaintenancePlans({
             {viewingPlan === plan.plan_id && (
               <div className="plan-history">
                 <CloudHistoryList
+                  itemId={item.id}
+                  store={store}
                   rows={
                     records.byPlan.planId === plan.plan_id
                       ? records.byPlan.rows

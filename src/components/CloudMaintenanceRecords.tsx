@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ItemsStore, RecordsSnapshot } from "../api/itemsStore";
 import type { MaintenancePlan } from "../api/maintenancePlans";
 import type { CloudMaintenanceRecord } from "../api/maintenanceRecords";
 import type { RecordDraft } from "../api/recordDrafts";
 import { money } from "../lib/dates";
+import { DriveRecordConnection } from "./DriveConnection";
 
 export function CloudHistoryList({
   rows,
@@ -11,13 +12,19 @@ export function CloudHistoryList({
   error,
   emptyText,
   planNames,
+  itemId,
+  store,
 }: {
   rows: CloudMaintenanceRecord[];
   status: "idle" | "loading" | "ready" | "error";
   error: string;
   emptyText: string;
   planNames?: Record<string, string>;
+  itemId?: string;
+  store?: ItemsStore;
 }) {
+  const [openPhotoRecord, setOpenPhotoRecord] = useState<string | null>(null);
+  useEffect(() => { setOpenPhotoRecord(null); }, [itemId]);
   return (
     <>
       {status === "loading" || status === "idle" ? (
@@ -49,6 +56,14 @@ export function CloudHistoryList({
                 <p>完整備註：{record.description || "無備註"}</p>
                 <p>完成日期：{record.completed_date}</p>
               </details>
+              {itemId && store && record.item_id === itemId && <div className="record-photo-area">
+                <button type="button" className="text-button" onClick={() =>
+                  setOpenPhotoRecord(openPhotoRecord === record.record_id ? null : record.record_id)}>
+                  {openPhotoRecord === record.record_id ? "收合照片" : "查看照片／上傳"}
+                </button>
+                {openPhotoRecord === record.record_id && <DriveRecordConnection
+                  key={`${itemId}:${record.record_id}`} itemId={itemId} recordId={record.record_id} store={store} />}
+              </div>}
             </article>
           ))}
         </div>

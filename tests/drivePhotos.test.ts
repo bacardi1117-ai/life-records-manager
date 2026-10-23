@@ -128,3 +128,27 @@ it("rechecks owner and attachment metadata before trashing only the selected Dri
   expect(drive.request.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(2);
   expect(drive.request.mock.calls.some(([url, init]) => url.includes(photo.id) && init?.method === "DELETE")).toBe(false);
 });
+it("keeps record, other record and item attachments separate even when their IDs match", async () => {
+  const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);
+  const first = { type: "record" as const, id: "record-one" };
+  const second = { type: "record" as const, id: "record-two" };
+  const recordPhoto = await repo.uploadOne(first, file(), await repo.prepare(first, file()), () => {});
+  const itemPhoto = await repo.uploadOne("record-one", file(), await repo.prepare("record-one", file()), () => {});
+  expect(recordPhoto).toMatchObject({ ownerType: "record", ownerId: "record-one" });
+  expect(itemPhoto).toMatchObject({ ownerType: "item", ownerId: "record-one" });
+  expect(await repo.list(first)).toHaveLength(1);
+  expect(await repo.list(second)).toHaveLength(0);
+  expect(await repo.list("record-one")).toHaveLength(1);
+  await expect(repo.trash(second, recordPhoto)).rejects.toThrow("不屬於");
+  await expect(repo.trash("record-one", recordPhoto)).rejects.toThrow("不屬於");
+  const row = drive.files.find(value => value.id === recordPhoto.id)!;
+  (row.appProperties as Record<string,string>).owner_id = "record-two";
+  await expect(repo.readBlob(recordPhoto)).rejects.toThrow("所屬");
+  await expect(repo.trash(first, recordPhoto)).rejects.toThrow("所屬");
+  (row.appProperties as Record<string,string>).owner_id = "record-one";
+  await repo.trash(first, recordPhoto);
+  expect(await repo.list(first)).toHaveLength(0);
+  expect(await repo.list("record-one")).toHaveLength(1);
+  sessionStorage.removeItem("life-records-manager:drive-folders:v1");
+  expect(await new DrivePhotosRepository(drive.transport).list("record-one")).toHaveLength(1);
+});
