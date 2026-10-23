@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowUpRight, CalendarDays, ClipboardList, Plus, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import type { LifeItem } from "../models";
 import type { OverviewSnapshot } from "../api/itemsStore";
-import { money } from "../lib/dates";
+import { daysUntil, money } from "../lib/dates";
 import { buildDashboard, filterItems, maintenanceCosts, taipeiToday } from "../lib/dashboard";
 import type { DashboardFilters, DueEntry } from "../lib/dashboard";
 import { DashboardCover, useDashboardCovers } from "./DashboardCover";
@@ -10,6 +10,10 @@ import { DashboardCover, useDashboardCovers } from "./DashboardCover";
 const initialFilters: DashboardFilters = { query: "", category: "", status: "", plan: "", due: "" };
 const itemUrl = (id: string) => `#/items/${encodeURIComponent(id)}`;
 const relative = (days: number) => days < 0 ? `逾期 ${-days} 天` : days === 0 ? "今天" : `剩餘 ${days} 天`;
+const completedRelative = (date: string, today: string) => {
+  const days = daysUntil(date, today);
+  return days === 0 ? "今天完成" : days < 0 ? `${-days} 天前完成` : `${days} 天後`;
+};
 function DueList({ rows, empty }: { rows: DueEntry[]; empty: string }) {
   return rows.length ? <div className="dashboard-list">{rows.map(row => <a key={`${row.item.id}:${row.id}`} href={itemUrl(row.item.id)}>
     <time>{row.date}</time><span><strong>{row.name}</strong><small>{row.item.name}</small></span><em className={row.days < 0 ? "late-text" : ""}>{relative(row.days)}</em>
@@ -76,7 +80,7 @@ export default function Dashboard({ items, add, cloud = false, readOnly = false,
         <h3>未來 30 天</h3><DueList rows={data.next30.slice(0,5)} empty="未來 30 天沒有保養。"/>
       </>}</div></aside></section>
     {data && costs && <div className="dashboard-overview-grid">
-      <section className="panel"><div className="section-heading"><h2>最近完成保養</h2></div>{data.completed.length ? <div className="dashboard-list">{data.completed.slice(0,5).map(row => <a href={itemUrl(row.item.id)} key={row.id}><time>{row.date}</time><span><strong>{row.name}</strong><small>{row.item.name}</small></span><em>{money(row.amount)}</em></a>)}</div> : <p className="empty">尚無完成紀錄。</p>}</section>
+      <section className="panel"><div className="section-heading"><h2>最近完成保養</h2></div>{data.completed.length ? <div className="dashboard-list">{data.completed.slice(0,5).map(row => <a href={itemUrl(row.item.id)} key={row.id}><time>{row.date}</time><span><strong>{row.name}</strong><small>{row.item.name} · {completedRelative(row.date, today)}</small></span><em>{money(row.amount)}</em></a>)}</div> : <p className="empty">尚無完成紀錄。</p>}</section>
       <section className="panel"><div className="section-heading"><h2>設備保固</h2></div>{data.warranties.length ? <div className="dashboard-list">{data.warranties.filter(row => row.state === "expired" || row.state === "soon").slice(0,5).map(row => <a href={itemUrl(row.item.id)} key={row.item.id}><time>{row.date}</time><span><strong>{row.item.name}</strong><small>設備保固</small></span><em>{row.state === "expired" ? `已到期 ${-row.days} 天` : relative(row.days)}</em></a>)}</div> : null}{!data.warranties.some(row => row.state === "expired" || row.state === "soon") && <p className="empty">近期沒有到期保固。</p>}</section>
       <section className="panel cost-panel"><div className="section-heading"><h2>保養費用統計</h2><label>年度 <select aria-label="費用年度" value={year} onChange={e => setYear(Number(e.target.value))}>{years.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
         <div className="cost-totals"><p>全部累計<strong>{money(costs.total)}</strong></p><p>{year} 年<strong>{money(costs.annual)}</strong></p><p>最近 12 個月<strong>{money(costs.last12)}</strong></p></div>

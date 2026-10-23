@@ -39,7 +39,7 @@ export function buildDashboard(items: LifeItem[], source: "cloud" | "mock", clou
       const id = source === "cloud" ? (row as CloudMaintenanceRecord).record_id : (row as LifeItem["history"][number]).id;
       if (unique.has(id)) continue;
       unique.add(id);
-      completed.push({ item, id, name: source === "cloud" ? (row as CloudMaintenanceRecord).title : (row as LifeItem["history"][number]).taskName,
+      completed.push({ item, id, name: source === "cloud" ? rows!.plans.find(plan => plan.plan_id === (row as CloudMaintenanceRecord).plan_id)?.name ?? (row as CloudMaintenanceRecord).title : (row as LifeItem["history"][number]).taskName,
         date: source === "cloud" ? (row as CloudMaintenanceRecord).completed_date : (row as LifeItem["history"][number]).date,
         amount: row.amount });
     }
