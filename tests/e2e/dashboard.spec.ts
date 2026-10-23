@@ -1,0 +1,65 @@
+import { expect, test } from "@playwright/test";
+import { mockGoogleBridge, sampleItem, samplePlan, sampleRecord, TEST_WEB_APP } from "../fixtures/googleBridge";
+async function connect(page: import("@playwright/test").Page) {
+  await page.goto("./#/settings");
+  await page.getByLabel("Web App /exec URL").fill(TEST_WEB_APP);
+  await page.getByRole("button", {name:"連線並使用 Google Sheets"}).click();
+  await page.getByRole("link", {name:"返回生活事項首頁"}).click();
+  await expect(page.getByText(/雲端資料最後成功更新/)).toBeVisible();
+}
+test("cloud dashboard combines real plan and record data without purchase cost", async ({page}, testInfo) => {
+  const state=await mockGoogleBridge(page);
+  state.rows[0].warranty_date="2026-11-05";
+  state.rows.push({...sampleItem,item_id:"second",name:"第二台冰箱",category:"廚房",brand:"另一品牌",model:"FR-2",location:"廚房",warranty_date:""});
+  state.plans[0]={...samplePlan,next_due_date:"2026-10-22"};
+  state.plans.push({...samplePlan,item_id:"second",plan_id:"plan-second",name:"冰箱清理",next_due_date:"2026-10-28"});
+  state.records.push({...sampleRecord,record_id:"record-one",completed_date:"2026-10-20",amount:350});
+  await connect(page);
+  await expect(page.locator(".stats")).toContainText("已逾期保養");
+  await expect(page.locator(".schedule-card")).toContainText("冰箱清理");
+  await expect(page.locator(".cost-panel")).toContainText("$350");
+  await expect(page.locator(".cost-panel")).not.toContainText("$12,800");
+  await expect(page.locator(".dashboard-overview-grid")).toContainText("設備保固");
+  await page.getByLabel("搜尋事項").fill("FR-2");
+  await page.getByLabel("分類篩選").selectOption("廚房");
+  await page.getByLabel("保養計畫篩選").selectOption("yes");
+  await page.getByLabel("保養日期篩選").selectOption("7");
+  await expect(page.locator(".item-card")).toHaveCount(1);
+  await expect(page.locator(".item-card")).toContainText("第二台冰箱");
+  await page.getByLabel("狀態篩選").selectOption("archived");
+  await expect(page.locator(".item-card")).toHaveCount(0);
+  await page.getByRole("button", {name:"清除條件"}).click();
+  await expect(page.locator(".item-card")).toHaveCount(2);
+  if (testInfo.project.name === "mobile") expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+test("history rows are collapsed independently and expose details only on expansion", async ({page}) => {
+  const state=await mockGoogleBridge(page);
+  state.records.push({...sampleRecord,record_id:"first",title:"第一筆",vendor:"廠商甲"},{...sampleRecord,record_id:"second",title:"第二筆",vendor:"廠商乙"});
+  await connect(page);
+  await page.locator(".item-card").click();
+  await page.getByRole("tab", {name:/歷史紀錄/}).click();
+  const rows=page.locator(".cloud-history article");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first().locator(".history-toggle")).toHaveAttribute("aria-expanded","false");
+  await expect(rows.first().getByText("施作廠商：廠商甲")).toHaveCount(0);
+  await rows.first().locator(".history-toggle").click();
+  await expect(rows.first().getByText("施作廠商：廠商甲")).toBeVisible();
+  await expect(rows.nth(1).locator(".history-toggle")).toHaveAttribute("aria-expanded","false");
+  await rows.first().locator(".history-toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(rows.first().locator(".history-toggle")).toHaveAttribute("aria-expanded","false");
+});
+test("failed cloud summary read shows an error and never presents zero as a real total", async ({page}) => {
+  const state=await mockGoogleBridge(page);
+  state.failRecordReads=true;
+  await page.goto("./#/settings");
+  await page.getByLabel("Web App /exec URL").fill(TEST_WEB_APP);
+  await page.getByRole("button", {name:"連線並使用 Google Sheets"}).click();
+  await page.getByRole("link", {name:"返回生活事項首頁"}).click();
+  await expect(page.getByRole("alert")).toContainText("保養看板讀取失敗");
+  await expect(page.locator(".cost-panel")).toHaveCount(0);
+  await expect(page.getByTestId("source-label")).toHaveText("Google Sheets 雲端模式");
+  state.failRecordReads=false;
+  await page.getByRole("button", {name:"重新讀取看板"}).click();
+  await expect(page.locator(".cost-panel")).toBeVisible();
+});

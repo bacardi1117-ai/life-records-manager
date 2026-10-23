@@ -369,13 +369,13 @@ export default function Detail({
                         .sort((a, b) => b.date.localeCompare(a.date))
                         .map((r) => (
                           <article key={r.id}>
-                            <div className="record-top">
-                              <span>{r.date}</span>
-                              <strong>{money(r.amount)}</strong>
-                            </div>
-                            <h3>{r.taskName}</h3>
-                            <p>{r.note || "無備註"}</p>
-                            <Gallery photos={r.photos} />
+                            <details className="history-details">
+                              <summary className="history-toggle">
+                                <span><time>{r.date}</time><strong>{r.taskName}</strong></span>
+                                <span>{money(r.amount)} <span className="history-arrow" aria-hidden="true">⌄</span></span>
+                              </summary>
+                              <div className="history-content"><p>{r.note || "無備註"}</p><Gallery photos={r.photos} /></div>
+                            </details>
                           </article>
                         ))}
                     </div>

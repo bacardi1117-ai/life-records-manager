@@ -161,6 +161,7 @@ function DrivePhotosPanel({ owner, ensureSaved }: { owner: PhotoOwner; ensureSav
       await ensureSaved?.();
       await drivePhotos.trash(owner, deleting);
       await refresh({ removed: deleting.id });
+      window.dispatchEvent(new Event("life-records-covers-changed"));
       setDeleting(null);
       setNotice("照片已移入 Google Drive 垃圾桶。");
     } catch (cause) { setError(errorText(cause)); }
@@ -203,8 +204,10 @@ function DrivePhotosPanel({ owner, ensureSaved }: { owner: PhotoOwner; ensureSav
         next = { ...next, verified: true };
         updateReplace(next);
       }
+      if (next.old.isCover && owner.type === "item") await drivePhotos.setCover(owner, next.newPhoto!);
       await drivePhotos.trash(owner, next.old);
       await refresh({ added: next.newPhoto!.id, removed: next.old.id });
+      window.dispatchEvent(new Event("life-records-covers-changed"));
       updateReplace(null);
       setNotice("照片已更換，舊照片已移入 Google Drive 垃圾桶。");
     } catch (cause) {
@@ -260,6 +263,18 @@ function DrivePhotosPanel({ owner, ensureSaved }: { owner: PhotoOwner; ensureSav
       setGeneration(value => value + 1);
     } finally { setBusy(false); }
   }
+  async function selectCover(photo: DrivePhoto) {
+    if (busy || actionBusy || owner.type !== "item") return;
+    setActionBusy(true); setError(""); setNotice("");
+    try {
+      await ensureSaved?.();
+      await drivePhotos.setCover(owner, photo);
+      await refresh();
+      window.dispatchEvent(new Event("life-records-covers-changed"));
+      setNotice("已設定私人照片封面，首頁重新載入後會顯示。");
+    } catch (cause) { setError(errorText(cause)); }
+    finally { setActionBusy(false); }
+  }
   return <div className="drive-photo-panel">
     <div className="section-heading"><h3>{owner.type === "record" ? "此完成紀錄" : "此事項"}的私人照片</h3>
       <button className="text-button" type="button" disabled={loading || busy || actionBusy} onClick={() => setGeneration(value => value + 1)}>重新讀取照片</button>
@@ -271,7 +286,7 @@ function DrivePhotosPanel({ owner, ensureSaved }: { owner: PhotoOwner; ensureSav
     {!!photos.length && <div className="drive-photo-grid">{photos.map(photo => <div className="drive-photo-card" key={photo.id}>
       <button type="button" className="drive-photo-open" aria-label={`放大預覽 ${photo.name}`} onClick={() => setViewId(photo.id)}><PrivateImage photo={photo} /></button>
       <span title={photo.name}>{photo.name}</span>
-      <div className="actions"><button type="button" className="secondary" disabled={actionBusy || busy} onClick={() => { updateReplace({ old: photo, file: null, pending: null, newPhoto: null, verified: false, progress: 0, error: "" }); }}>更換</button>
+      <div className="actions">{owner.type === "item" && <button type="button" className="secondary" disabled={actionBusy || busy || photo.isCover} onClick={() => void selectCover(photo)}>{photo.isCover ? "目前封面" : "設為封面"}</button>}<button type="button" className="secondary" disabled={actionBusy || busy} onClick={() => { updateReplace({ old: photo, file: null, pending: null, newPhoto: null, verified: false, progress: 0, error: "" }); }}>更換</button>
         <button type="button" className="secondary" disabled={actionBusy || busy} onClick={() => setDeleting(photo)}>刪除</button></div>
     </div>)}</div>}
     <label>選取照片（JPG、PNG、WebP；每張最多 10 MB）

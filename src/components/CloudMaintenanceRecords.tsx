@@ -23,8 +23,8 @@ export function CloudHistoryList({
   itemId?: string;
   store?: ItemsStore;
 }) {
-  const [openPhotoRecord, setOpenPhotoRecord] = useState<string | null>(null);
-  useEffect(() => { setOpenPhotoRecord(null); }, [itemId]);
+  const [openRecords, setOpenRecords] = useState<Set<string>>(() => new Set());
+  useEffect(() => { setOpenRecords(new Set()); }, [itemId]);
   return (
     <>
       {status === "loading" || status === "idle" ? (
@@ -42,27 +42,22 @@ export function CloudHistoryList({
         <div className="timeline cloud-history">
           {rows.map((record) => (
             <article key={record.record_id}>
-              <div className="record-top">
-                <time>{record.completed_date}</time>
-                <strong>{money(record.amount)}</strong>
-              </div>
-              <p>保養項目：{planNames?.[record.plan_id] ?? record.title}</p>
-              <h3>{record.title}</h3>
-              <p>施作廠商：{record.vendor || "未填寫"}</p>
-              <p>備註：{record.description || "無備註"}</p>
-              <details>
-                <summary>查看完整內容</summary>
-                <p>保養標題：{record.title}</p>
-                <p>完整備註：{record.description || "無備註"}</p>
-                <p>完成日期：{record.completed_date}</p>
-              </details>
-              {itemId && store && record.item_id === itemId && <div className="record-photo-area">
-                <button type="button" className="text-button" onClick={() =>
-                  setOpenPhotoRecord(openPhotoRecord === record.record_id ? null : record.record_id)}>
-                  {openPhotoRecord === record.record_id ? "收合照片與附件" : "查看照片與附件／上傳"}
-                </button>
-                {openPhotoRecord === record.record_id && <DriveRecordConnection
-                  key={`${itemId}:${record.record_id}`} itemId={itemId} recordId={record.record_id} store={store} />}
+              <button type="button" className="history-toggle" aria-expanded={openRecords.has(record.record_id)}
+                aria-controls={`history-${record.record_id}`} onClick={() => setOpenRecords(current => {
+                  const next = new Set(current);
+                  if (next.has(record.record_id)) next.delete(record.record_id); else next.add(record.record_id);
+                  return next;
+                })}>
+                <span><time>{record.completed_date}</time><strong>{planNames?.[record.plan_id] ?? record.title}</strong>{planNames?.[record.plan_id] && planNames[record.plan_id] !== record.title && <small>{record.title}</small>}</span>
+                <span>{money(record.amount)} <span aria-hidden="true">{openRecords.has(record.record_id) ? "⌃" : "⌄"}</span></span>
+              </button>
+              {openRecords.has(record.record_id) && <div id={`history-${record.record_id}`} className="history-content">
+                <h3>{record.title}</h3>
+                <p>施作廠商：{record.vendor || "未填寫"}</p>
+                <p>備註：{record.description || "無備註"}</p>
+                {itemId && store && record.item_id === itemId && <div className="record-photo-area">
+                  <DriveRecordConnection key={`${itemId}:${record.record_id}`} itemId={itemId} recordId={record.record_id} store={store} />
+                </div>}
               </div>}
             </article>
           ))}

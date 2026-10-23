@@ -28,6 +28,14 @@ import type {
   NoteOwnerType,
 } from "./cloudNotes";
 import { noteDrafts } from "./noteDrafts";
+import type { OverviewRows } from "../lib/dashboard";
+export interface OverviewSnapshot {
+  status: "idle" | "loading" | "ready" | "error";
+  rows: OverviewRows;
+  updatedAt: string;
+  error: string;
+}
+const emptyOverview = (): OverviewSnapshot => ({ status: "idle", rows: {}, updatedAt: "", error: "" });
 export interface NotesSnapshot {
   ownerType: NoteOwnerType | null;
   ownerId: string | null;
@@ -105,6 +113,7 @@ const emptyPlans = (): PlansSnapshot => ({
   notice: "",
 });
 interface Snapshot {
+  overview: OverviewSnapshot;
   notes: NotesSnapshot;
   plans: PlansSnapshot;
   records: RecordsSnapshot;
@@ -124,6 +133,7 @@ const message = (error: unknown) =>
   error instanceof Error ? error.message : "資料操作失敗";
 export class ItemsStore {
   private state: Snapshot = {
+    overview: emptyOverview(),
     notes: emptyNotes(NOTES_API_ENABLED),
     plans: emptyPlans(),
     records: emptyRecords(),
@@ -147,6 +157,7 @@ export class ItemsStore {
   private calendarRepository: CalendarSyncRepository | null = null;
   private notesRepository: CloudNotesRepository | null = null;
   private notesRequest = 0;
+  private overviewRequest = 0;
   private planRequest = 0;
   private recordRequest = 0;
   private planHistoryRequest = 0;
@@ -186,12 +197,14 @@ export class ItemsStore {
     this.calendarRepository = null;
     this.notesRepository = null;
     this.notesRequest++;
+    this.overviewRequest++;
     this.planRequest++;
     this.recordRequest++;
     this.planHistoryRequest++;
     this.calendarRequest++;
     this.detailId = null;
     this.emit({
+      overview: emptyOverview(),
       plans: emptyPlans(),
       records: emptyRecords(),
       calendarSync: emptyCalendarSync(this.state.calendarSync.enabled),
@@ -263,6 +276,7 @@ export class ItemsStore {
         this.state.notes.status !== "unavailable",
       );
       this.emit({
+        overview: emptyOverview(),
         items,
         status: "ready",
         stale: false,
@@ -322,6 +336,7 @@ export class ItemsStore {
       return;
     }
     this.epoch++;
+    this.overviewRequest++;
     this.detailRequest++;
     this.bridge?.dispose();
     this.bridge = null;
@@ -347,6 +362,7 @@ export class ItemsStore {
   };
   dispose = () => {
     this.epoch++;
+    this.overviewRequest++;
     this.detailRequest++;
     this.bridge?.dispose();
     this.bridge = null;
@@ -366,6 +382,37 @@ export class ItemsStore {
       ? items.map((i) => (i.id === item.id ? item : i))
       : [item, ...items];
   }
+  /** Home summary uses the same cloud repositories as the detail page. An incomplete read is never published as zero. */
+  loadOverview = async () => {
+    if (this.state.mode !== "cloud" || this.state.status !== "ready" || this.state.stale ||
+        !this.plansRepository || !this.recordsRepository ||
+        this.state.overview.status === "loading" || this.state.overview.status === "ready") return;
+    const generation = this.epoch, request = ++this.overviewRequest;
+    const ids = this.state.items.map(item => item.id);
+    const rows: OverviewRows = {};
+    const plansRepo = this.plansRepository, recordsRepo = this.recordsRepository;
+    this.emit({ overview: { ...this.state.overview, status: "loading", error: "" } });
+    let cursor = 0;
+    try {
+      await Promise.all(Array.from({ length: Math.min(3, ids.length) }, async () => {
+        while (cursor < ids.length) {
+          const itemId = ids[cursor++];
+          const [plans, records] = await Promise.all([plansRepo.list(itemId), recordsRepo.byItem(itemId)]);
+          rows[itemId] = { plans, records };
+        }
+      }));
+      if (generation === this.epoch && request === this.overviewRequest)
+        this.emit({ overview: { status: "ready", rows, updatedAt: new Date().toISOString(), error: "" } });
+    } catch (error) {
+      if (generation === this.epoch && request === this.overviewRequest)
+        this.emit({ overview: { ...this.state.overview, status: "error", error: message(error) } });
+    }
+  };
+  refreshOverview = () => {
+    this.overviewRequest++;
+    this.emit({ overview: emptyOverview() });
+    return this.loadOverview();
+  };
   openItem = async (id: string) => {
     const generation = this.epoch,
       request = ++this.detailRequest;
@@ -436,6 +483,7 @@ export class ItemsStore {
       const selected = id ? await repository.get(id) : null;
       if (generation === this.epoch)
         this.emit({
+          overview: emptyOverview(),
           items: selected ? this.upsert(selected, items) : items,
           stale: false,
           ...(request === this.detailRequest
@@ -467,6 +515,7 @@ export class ItemsStore {
         throw new Error("資料來源已切換，請確認原來源的寫入結果");
       if (result.item)
         this.emit({
+          overview: emptyOverview(),
           items: this.upsert(result.item),
           ...(this.detailId === result.id
             ? { selected: result.item, detailState: "ready" }
@@ -694,6 +743,8 @@ export class ItemsStore {
       try {
         const rows = await repository.list(itemId);
         if (current()) {
+          this.overviewRequest++;
+          this.emit({ overview: emptyOverview() });
           this.emitPlans({
             rows,
             status: "ready",
@@ -869,6 +920,7 @@ export class ItemsStore {
     ++this.recordRequest;
     ++this.planHistoryRequest;
     this.emit({
+      overview: emptyOverview(),
       plans: {
         itemId: draft.item_id,
         rows: plans,

@@ -85,6 +85,15 @@ async function fakeDrive(page: Page) {
       if (state.failTrash) return fulfill({}, 503);
       const row = state.files.find(value => url.pathname.endsWith(`/${value.id}`));
       if (!row) return fulfill({}, 404);
+      if (request.postDataJSON()?.appProperties) {
+        const changes = request.postDataJSON().appProperties as Record<string,string | null>;
+        const props = { ...(row.appProperties as Record<string,string>) };
+        for (const [key, value] of Object.entries(changes)) {
+          if (value === null) delete props[key]; else props[key] = value;
+        }
+        row.appProperties = props;
+        return fulfill({ id: row.id, appProperties: props });
+      }
       row.trashed = true;
       return fulfill({ id: row.id, trashed: true });
     }
@@ -108,6 +117,7 @@ async function fakeDrive(page: Page) {
         const attachmentId = q.match(/value='([^']+)'/)?.[1];
         return (row.appProperties as Record<string,string>)?.attachment_id === attachmentId;
       }
+      if (q.includes("life_records_cover")) return (row.appProperties as Record<string,string>)?.life_records_cover === "true";
       const parent = q.match(/'([^']+)' in parents/)?.[1];
       if (parent && !(row.parents as string[])?.includes(parent)) return false;
       const name = q.match(/name = '([^']+)'/)?.[1];
@@ -298,7 +308,7 @@ test("record photos use record ownership and stay separate from other records an
   const drive = await fakeDrive(page);
   await openHistory(page);
   const first = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await first.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await first.locator(".history-toggle").click();
   await first.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await first.getByLabel("選取私人 Drive 照片").setInputFiles([
     { name: "保養一.png", mimeType: "image/png", buffer: png },
@@ -311,14 +321,14 @@ test("record photos use record ownership and stay separate from other records an
     return props.owner_type === "record" && props.owner_id === sampleRecord.record_id && Boolean(props.attachment_id);
   })).toBe(true);
   const second = page.locator(".cloud-history article").filter({ hasText: "第二次保養" });
-  await second.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await second.locator(".history-toggle").click();
   await expect(second.getByText("這筆完成紀錄尚無私人 Drive 照片")).toBeVisible();
   await page.getByRole("tab", { name: /照片/ }).click();
   await expect(page.getByText("這件事項尚無私人 Drive 照片")).toBeVisible();
   await page.reload();
   await page.getByRole("tab", { name: /歷史紀錄/ }).click();
   const reloaded = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await reloaded.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await reloaded.locator(".history-toggle").click();
   await reloaded.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await expect(reloaded.locator(".drive-photo-card img")).toHaveCount(2);
   expect(drive.folderCreates).toBe(2);
@@ -332,7 +342,7 @@ test("record photos can be previewed, replaced and moved to trash with partial f
   const drive = await fakeDrive(page);
   await openHistory(page);
   const card = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await card.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await card.locator(".history-toggle").click();
   await card.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await card.getByLabel("選取私人 Drive 照片").setInputFiles({ name: "舊照片.png", mimeType: "image/png", buffer: png });
   await card.getByRole("button", { name: "上傳／核對選取的照片" }).click();
@@ -367,7 +377,7 @@ test("record photo upload stops if Sheets cannot confirm the saved record", asyn
   const drive = await fakeDrive(page);
   await openHistory(page);
   const card = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await card.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await card.locator(".history-toggle").click();
   await card.getByRole("button", { name: "連接私人 Google Drive" }).click();
   backend.records.length = 0; // The visible row is stale; the backend no longer confirms it.
   await card.getByLabel("選取私人 Drive 照片").setInputFiles({ name: "不可上傳.png", mimeType: "image/png", buffer: png });
@@ -385,7 +395,7 @@ test("a failed photo in a record batch keeps previously uploaded private photos"
   drive.failUploadAt = 2;
   await openHistory(page);
   const card = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await card.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await card.locator(".history-toggle").click();
   await card.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await card.getByLabel("選取私人 Drive 照片").setInputFiles([
     { name: "成功.png", mimeType: "image/png", buffer: png },
@@ -398,7 +408,7 @@ test("a failed photo in a record batch keeps previously uploaded private photos"
   await page.reload();
   await page.getByRole("tab", { name: /歷史紀錄/ }).click();
   const restored = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await restored.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await restored.locator(".history-toggle").click();
   await restored.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await expect(restored.locator(".drive-photo-card")).toHaveCount(1);
 });
@@ -454,7 +464,7 @@ test("record PDFs remain separate from item and other record PDFs", async ({ pag
   const drive = await fakeDrive(page);
   await openHistory(page);
   const first = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await first.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await first.locator(".history-toggle").click();
   await first.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await first.getByLabel("選取私人 Drive PDF").setInputFiles({ name: "維修單.pdf", mimeType: "application/pdf", buffer: pdf });
   await first.getByRole("button", { name: "上傳／核對選取的 PDF" }).click();
@@ -463,14 +473,14 @@ test("record PDFs remain separate from item and other record PDFs", async ({ pag
     owner_type: "record", owner_id: sampleRecord.record_id,
   });
   const second = page.locator(".cloud-history article").filter({ hasText: "第二次保養" });
-  await second.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await second.locator(".history-toggle").click();
   await expect(second.getByText("尚無私人 PDF 文件")).toBeVisible();
   await page.getByRole("tab", { name: /照片/ }).click();
   await expect(page.getByText("尚無私人 PDF 文件")).toBeVisible();
   await page.reload();
   await page.getByRole("tab", { name: /歷史紀錄/ }).click();
   const reloaded = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await reloaded.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await reloaded.locator(".history-toggle").click();
   await reloaded.getByRole("button", { name: "連接私人 Google Drive" }).click();
   await expect(reloaded.locator(".drive-pdf-row")).toHaveCount(1);
 });
@@ -541,7 +551,7 @@ test("record PDF upload requires the saved Sheets record", async ({ page }) => {
   const drive = await fakeDrive(page);
   await openHistory(page);
   const card = page.locator(".cloud-history article").filter({ hasText: sampleRecord.title });
-  await card.getByRole("button", { name: "查看照片與附件／上傳" }).click();
+  await card.locator(".history-toggle").click();
   await card.getByRole("button", { name: "連接私人 Google Drive" }).click();
   backend.records.length = 0;
   await card.getByLabel("選取私人 Drive PDF").setInputFiles({ name: "未儲存.pdf", mimeType: "application/pdf", buffer: pdf });
@@ -575,4 +585,34 @@ test("Mock mode never shows private PDF controls or calls Drive", async ({ page 
   await page.getByRole("tab", { name: /照片/ }).click();
   await expect(page.getByLabel("選取私人 Drive PDF")).toHaveCount(0);
   expect(requests).toBe(0);
+});
+test("selected private item cover appears on home and falls back after trash", async ({ page }) => {
+  test.skip(!enabled);
+  await fakeGis(page);
+  await mockGoogleBridge(page);
+  const drive = await fakeDrive(page);
+  await open(page);
+  await page.getByLabel("選取私人 Drive 照片").setInputFiles({name:"封面.png",mimeType:"image/png",buffer:png});
+  await page.getByRole("button", {name:"上傳／核對選取的照片"}).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  await page.getByRole("button", {name:"設為封面"}).click();
+  await expect(page.getByRole("button", {name:"目前封面"})).toBeDisabled();
+  await page.getByRole("link", {name:"所有生活事項"}).click();
+  await page.locator(".item-card").scrollIntoViewIfNeeded();
+  await expect(page.locator(".item-card .dashboard-cover-image img")).toBeVisible();
+  expect((await page.locator(".item-card .dashboard-cover-image img").getAttribute("src"))?.startsWith("blob:")).toBe(true);
+  await page.locator(".item-card").click();
+  await page.getByRole("tab", {name:/照片/}).click();
+  await page.getByRole("button", {name:"取消 Google Drive 授權"}).click();
+  await page.getByRole("link", {name:"所有生活事項"}).click();
+  await expect(page.locator(".item-card .dashboard-cover-image img")).toHaveCount(0);
+  await page.locator(".item-card").click();
+  await page.getByRole("tab", {name:/照片/}).click();
+  await page.getByRole("button", {name:"重新授權 Google Drive"}).click();
+  await expect(page.locator(".drive-photo-card")).toHaveCount(1);
+  await page.locator(".drive-photo-card").getByRole("button", {name:"刪除"}).click();
+  await page.getByRole("button", {name:"確認移入垃圾桶"}).click();
+  await page.getByRole("link", {name:"所有生活事項"}).click();
+  await expect(page.locator(".item-card .dashboard-cover-image img")).toHaveCount(0);
+  expect(drive.files.filter(row => (row.appProperties as Record<string,string>)?.life_records_cover === "true" && !row.trashed)).toHaveLength(0);
 });

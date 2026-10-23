@@ -174,3 +174,36 @@ it("a failed detail read also blocks cloud writes until a successful refresh", a
   await store.refresh();
   expect(store.getSnapshot().stale).toBe(false);
 });
+it("home overview reads all cloud owners and publishes only a complete snapshot", async () => {
+  connectionSettings.save(url);
+  const other = { ...row, item_id: "two", name: "其他事項" };
+  const request = vi.spyOn(AppsScriptBridge.prototype, "request").mockImplementation(async (action, payload) => {
+    if (action === "getItems") return [row, other];
+    if (action === "getMaintenancePlans") return [];
+    if (action === "getMaintenanceRecordsByItem") {
+      if ((payload as {item_id:string}).item_id === "two") throw new Error("第二項讀取失敗");
+      return [];
+    }
+    return null;
+  });
+  await store.start();
+  await store.loadOverview();
+  expect(store.getSnapshot().overview.status).toBe("error");
+  expect(store.getSnapshot().overview.error).toContain("第二項讀取失敗");
+  expect(Object.keys(store.getSnapshot().overview.rows)).toHaveLength(0);
+  request.mockImplementation(async action => action === "getItems" ? [row,other] : []);
+  await store.refreshOverview();
+  expect(store.getSnapshot().overview.status).toBe("ready");
+  expect(Object.keys(store.getSnapshot().overview.rows).sort()).toEqual(["one","two"]);
+});
+it("switching to Mock invalidates home overview and never reads cloud plans", async () => {
+  connectionSettings.save(url);
+  const request=vi.spyOn(AppsScriptBridge.prototype,"request").mockImplementation(async action => action === "getItems" ? [row] : []);
+  await store.start();
+  await store.loadOverview();
+  await store.useMock();
+  await store.loadOverview();
+  expect(store.getSnapshot().mode).toBe("mock");
+  expect(store.getSnapshot().overview.status).toBe("idle");
+  expect(request.mock.calls.filter(([action]) => action === "getMaintenancePlans")).toHaveLength(1);
+});

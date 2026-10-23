@@ -6,7 +6,8 @@ test("maintenance, history and notes typography stays readable without viewport 
   await expect(page.locator(".task-info h3").first()).toHaveCSS("font-size", "18px");
   await expect(page.locator(".task-info p").first()).toHaveCSS("font-size", "15px");
   await page.getByRole("tab", { name: "歷史紀錄" }).click();
-  await expect(page.locator(".timeline h3").first()).toHaveCSS("font-size", "18px");
+  await expect(page.locator(".timeline time").first()).toHaveCSS("font-size", "19px");
+  await page.locator(".timeline summary").first().click();
   await expect(page.locator(".timeline p").first()).toHaveCSS("font-size", "15px");
   await page.getByRole("tab", { name: "備註" }).click();
   await expect(page.locator(".note p").first()).toHaveCSS("font-size", "16px");

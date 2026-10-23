@@ -20,6 +20,7 @@ export interface DrivePhoto {
   attachmentId: string;
   createdTime: string;
   size: number;
+  isCover?: boolean;
 }
 export type DrivePdf = DrivePhoto;
 export interface PhotoOwner { type: "item" | "record"; id: string }
@@ -53,7 +54,7 @@ function parseAttachment(value: unknown, expected: PhotoOwner, kind: AttachmentK
     throw new Error("Drive 附件所屬資料或格式不符");
   return { id: id(row.id), name: row.name, mimeType: String(row.mimeType),
     ownerId: expected.id, ownerType: expected.type, attachmentId: props.attachment_id, createdTime: String(row.createdTime ?? ""),
-    size: Number(row.size ?? 0) };
+    size: Number(row.size ?? 0), isCover: props.life_records_cover === "true" };
 }
 function readMap<T>(key: string): Record<string, T> {
   const raw = sessionStorage.getItem(key);
@@ -176,6 +177,36 @@ export class DrivePhotosRepository {
       .sort((a,b) => b.createdTime.localeCompare(a.createdTime));
   }
   async list(value: OwnerArg): Promise<DrivePhoto[]> { return this.listKind(value, "photo"); }
+  /** One Drive query for all item covers; each image is still fetched privately after ownership verification. */
+  async listCovers(): Promise<DrivePhoto[]> {
+    const rows = await this.listRaw("appProperties has { key='life_records_cover' and value='true' } and trashed = false");
+    return rows.flatMap(row => {
+      const props = row.appProperties as Record<string, unknown> | undefined;
+      if (props?.owner_type !== "item" || typeof props.owner_id !== "string") return [];
+      try { return [parseAttachment(row, { type: "item", id: props.owner_id }, "photo")]; }
+      catch { return []; }
+    });
+  }
+  async setCover(value: OwnerArg, photo: DrivePhoto): Promise<void> {
+    const expected = owner(value);
+    if (expected.type !== "item" || !await this.verifyManaged(expected, photo))
+      throw new Error("封面照片不屬於目前生活事項");
+    const covers = (await this.listCovers()).filter(row => row.ownerId === expected.id && row.id !== photo.id);
+    const patch = async (target: DrivePhoto, cover: boolean) => {
+      const result = await json(await this.transport.request(`${API}/${encodeURIComponent(target.id)}?fields=id,appProperties`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appProperties: { life_records_cover: cover ? "true" : null } }),
+      }));
+      const actual = (result.appProperties as Record<string, unknown> | undefined)?.life_records_cover;
+      if (result.id !== target.id || (cover ? actual !== "true" : actual != null))
+        throw new Error("無法確認封面設定，請重新讀取 Drive 照片");
+    };
+    await patch(photo, true);
+    for (const previous of covers) {
+      if (!await this.verifyManaged(expected, previous)) continue;
+      await patch(previous, false);
+    }
+  }
   async listPdf(value: OwnerArg): Promise<DrivePdf[]> { return this.listKind(value, "pdf"); }
   private async findAttachmentKind(value: OwnerArg, attachmentId: string, kind: AttachmentKind): Promise<DrivePhoto | null> {
     const expected = owner(value);
