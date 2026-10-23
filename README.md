@@ -128,7 +128,7 @@ git push -u origin HEAD
 ### 正式 Items 操作
 
 - 首頁、詳細頁與統計均讀取相同來源的 Items。詳細頁開啟時以 item_id 呼叫 getItem，不沿用其他事項的快取。
-- 基本資料包含名稱、分類、事項日期、金額、品牌、型號、位置、保固日期及狀態。雲端首頁統計為事項數、事項總金額與已封存數；不將未支援的保養統計顯示成已同步。
+- 基本資料包含名稱、分類、事項日期、金額、品牌、型號、位置、保固日期及狀態。雲端首頁從同一組保養計畫與完成紀錄 API 彙整逾期、近期保養及保養費用；事項購買金額不混入保養費用。
 - 「編輯資料」以表單開啟時的資料為基準，只送出實際修改欄位的 `updateItem({item_id, changes})`。未更動的欄位不會覆寫後端同期變更；沒有修改時不呼叫 updateItem。
 - 寫入確認後以同一 item_id 重新呼叫 getItem，使用後端結果更新詳細頁、首頁卡片與統計。狀態變更使用既有 archiveItem/restoreItem。
 - 首頁新增呼叫 createItem，使用回傳物件的 item_id 開啟詳細頁，並重新讀取該筆資料；不使用前端產生的替代 ID，不建立 Mock 副本。
@@ -138,7 +138,7 @@ git push -u origin HEAD
 
 ### 尚未支援的功能與本機資料保護
 
-雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正、完成紀錄照片及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 已支援事項私人照片上傳與授權讀取。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
+雲端支援 Items CRUD、MaintenancePlans 計畫管理與 MaintenanceRecords 完成紀錄新增／查詢。完成後從後端重讀最近完成日期、下次保養日及歷史。完成紀錄刪除／更正及本機購買安裝說明尚未串接雲端 API；網站透過 Web App v3.1 讀取 CalendarSync 同步紀錄，Google Drive 已支援事項私人照片上傳與授權讀取。私人 Apps Script 負責日曆事件同步，網站沒有日曆寫入權限。Mock 保養、歷史及照片功能維持原有行為。
 
 - 本機事項仍使用 `life-records-manager:v1`；沒有遷移、覆寫或刪除既有資料。
 - Web App URL 使用 `life-records-manager:apps-script-url:v1`。
@@ -216,9 +216,9 @@ HtmlService 使用內層 iframe；Adapter 以合法 Google origin 與當次 toke
 
 ## Google Sheets 保養完成紀錄（Web App v3.0）
 
-雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片、網站手動日曆同步與完成紀錄刪除／更正目前不可用。
+雲端模式沿用同一個 iframe + postMessage Bridge，在原本事項詳細頁的「定期子項目」點選已啟用計畫的「完成保養」。表單顯示不可更換的計畫，預設今天及計畫名稱，可填完成日期、標題、非負費用、廠商與最多 5000 字備註。照片可在完成紀錄成功儲存後透過私人 Drive 另行上傳；網站手動日曆同步與完成紀錄刪除／更正目前不可用。
 
-Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintenanceRecord`、`getMaintenanceRecordsByItem` 四個 action。建立 payload 僅含 `record_id`、`plan_id`、`completed_date`、`title`、`amount`、`vendor`、`description`，不由前端修改計畫的最近完成日或下次保養日。成功（包含 `duplicate: true`）後重新讀取該事項計畫及事項／子計畫完成紀錄，詳細頁使用後端回傳的日期及金額；首頁現有統計僅包含事項數、事項金額與封存數，沒有跨事項保養費用欄位。雲端歷史按完成日期由新到舊，支援展開完整備註，並按 item_id／plan_id 隔離。
+Bridge 新增 `createMaintenanceRecord`、`getMaintenanceRecords`、`getMaintenanceRecord`、`getMaintenanceRecordsByItem` 四個 action。建立 payload 僅含 `record_id`、`plan_id`、`completed_date`、`title`、`amount`、`vendor`、`description`，不由前端修改計畫的最近完成日或下次保養日。成功（包含 `duplicate: true`）後重新讀取該事項計畫及事項／子計畫完成紀錄，詳細頁使用後端回傳的日期及金額；首頁統計會依雲端完成紀錄計算累計、年度與最近 12 個月費用，按 record_id 去重。雲端歷史按完成日期由新到舊，逐筆展開完整備註及私人附件，並按 item_id／plan_id 隔離。
 
 每份尚未確認的草稿使用同一個 `crypto.randomUUID()` record_id；本瀏覽器分頁的 `sessionStorage` 在重整時保留這份草稿，鍵名 `life-records-manager:pending-cloud-records:v1`，與 Mock 的 `localStorage` 完全分開。送出逾時或結果不確定時，先以 `getMaintenanceRecord` 查原 ID：若已存在且內容一致則重讀資料；若查不到，可由使用者沿用同一 ID 重試；若查詢也失敗則暫停送出，直到查明。後端明確衝突或內容不符會停止重試。已確認寫入但後續重讀失敗時同樣不重送。`duplicate: true` 視為原紀錄已存在，重讀後顯示明確結果。
 
@@ -258,10 +258,18 @@ Drive 操作不使用 Apps Script Bridge；不提供永久刪除、分享或公�
 
 ## 私人 Google Drive 保養完成紀錄照片
 
-雲端「歷史紀錄」中的每筆完成紀錄，以及定期子項目展開的完成紀錄，均可各自展開「查看照片與附件／上傳」。紀錄照片與事項照片沿用同一 Drive Adapter，但使用獨立資料夾及 `appProperties`：`attachment_id` 為 UUID、`owner_type=record`、`owner_id=record_id`。上傳、更換和移入垃圾桶前會向 Google Sheets 讀回原 `record_id`，確認紀錄確實存在且屬於目前事項；每次 Drive 操作也會核對檔案擁有者與附件 ID。不同紀錄、事項照片與 Mock 照片不互相混用。網站不修改 Sheets Attachments 工作表或 Apps Script。模擬測試通過後，仍需在正式帳號驗證上傳、重新授權、放大預覽、更換與移入垃圾桶。
+雲端「歷史紀錄」中的每筆完成紀錄，以及定期子項目展開的完成紀錄，均可展開該筆歷史紀錄查看照片與附件及上傳操作。紀錄照片與事項照片沿用同一 Drive Adapter，但使用獨立資料夾及 `appProperties`：`attachment_id` 為 UUID、`owner_type=record`、`owner_id=record_id`。上傳、更換和移入垃圾桶前會向 Google Sheets 讀回原 `record_id`，確認紀錄確實存在且屬於目前事項；每次 Drive 操作也會核對檔案擁有者與附件 ID。不同紀錄、事項照片與 Mock 照片不互相混用。網站不修改 Sheets Attachments 工作表或 Apps Script。模擬測試通過後，仍需在正式帳號驗證上傳、重新授權、放大預覽、更換與移入垃圾桶。
 
 ## 私人 Google Drive PDF 文件
 
 事項與已儲存保養完成紀錄的照片區塊也提供獨立 PDF 文件清單，可一次選取多份 `application/pdf`，每份最多 20 MB；清單顯示檔名、大小、建立日期。網站檢查檔案 MIME 與 `%PDF-` 標頭，使用原本的 Drive 資料夾、`attachment_id` 和 resumable upload session。網路中斷時先查詢同一 session 的已收位元組並續傳；結果仍不明時保留原附件 ID，核對前不以新 ID 再建檔。事項或紀錄上傳前會再次從 Sheets 確認該筆已儲存。
 
 預覽時由授權 Drive API 取得內容，短暫的 Blob URL 在關閉視窗時釋放；瀏覽器無法預覽時可按「下載原始 PDF」。刪除會先核對 Drive file ID、`owner_type`、`owner_id`、`attachment_id`，再以 `trashed=true` 移入垃圾桶。不修改 Apps Script 或 Sheets Attachments 工作表，不提供公開連結。模擬測試不代表正式 Drive PDF 上傳、續傳、預覽或刪除已驗證。
+
+## 首頁保養看板與私人封面
+
+首頁從目前所選資料來源讀取 Items、MaintenancePlans 與 MaintenanceRecords。雲端會逐項讀取並在全部成功後更新看板與「最後成功更新」時間；任一保養資料讀取失敗時顯示錯誤，不把缺失資料當作零元或空提醒。可使用首頁的重新讀取按鈕刷新 Items 與看板；Mock 仍只使用本機資料，不自動上傳。
+
+逾期、未來 7 天及未來 30 天按 Asia/Taipei 的日曆日期比較；保固日期分為已到期、30 天內到期、尚未到期與未填寫。搜尋支援名稱、品牌、型號與位置，並可同時使用分類、狀態、保養計畫及到期篩選。保養費用只加總完成紀錄，不含設備購入金額，並顯示年度、最近 12 個月、各事項排行與月度趨勢。
+
+雲端「照片與附件」可對事項照片按「設為封面」。此偏好儲存在該私人 Drive 檔案的 appProperties 中，首頁只有在目前分頁已授權 Drive 時才查詢封面 metadata，且僅在卡片靠近畫面時以授權 API 讀取圖片並產生暫時 Blob URL。取消授權、權限過期或封面被移入垃圾桶後，首頁顯示預設圖示。此封面 metadata 更新目前只有模擬 Drive 測試，仍需在正式帳號驗證。
