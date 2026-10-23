@@ -1480,6 +1480,17 @@ textarea {
 .drive-photo-card img, .drive-photo-placeholder { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: .7rem; background: #f3f5f0; }
 .drive-photo-placeholder { display: grid; place-items: center; padding: .5rem; text-align: center; }
 .drive-photo-card span { overflow-wrap: anywhere; }
+.drive-photo-open { display: block; width: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
+.drive-photo-open:focus-visible { outline: 3px solid var(--accent, #3b755b); outline-offset: 3px; border-radius: .7rem; }
+.drive-photo-card .actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.drive-photo-card .actions button { font-size: .85rem; padding: .35rem .55rem; }
+.drive-photo-viewer { display: grid; gap: .8rem; max-width: min(90vw, 860px); touch-action: pan-y; }
+.drive-photo-viewer .drive-photo-large { display: block; max-width: 100%; max-height: 68vh; object-fit: contain; margin: auto; }
+.drive-photo-viewer .drive-photo-placeholder { min-height: 14rem; aspect-ratio: auto; }
+.drive-replace-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.drive-replace-preview img { width: 100%; max-height: 13rem; object-fit: contain; background: #f3f5f0; border-radius: .7rem; }
+.drive-replace-preview p { overflow-wrap: anywhere; }
+@media (max-width: 520px) { .drive-replace-preview { grid-template-columns: 1fr 1fr; gap: .5rem; } }
 .drive-upload-list { display: grid; gap: .5rem; }
 .drive-upload-list > div { display: grid; gap: .35rem; }
 .drive-upload-list progress { width: 100%; }
