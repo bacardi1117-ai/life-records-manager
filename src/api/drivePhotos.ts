@@ -177,21 +177,11 @@ export class DrivePhotosRepository {
       .sort((a,b) => b.createdTime.localeCompare(a.createdTime));
   }
   async list(value: OwnerArg): Promise<DrivePhoto[]> { return this.listKind(value, "photo"); }
-  /** One Drive query for all item covers; each image is still fetched privately after ownership verification. */
-  async listCovers(): Promise<DrivePhoto[]> {
-    const rows = await this.listRaw("appProperties has { key='life_records_cover' and value='true' } and trashed = false");
-    return rows.flatMap(row => {
-      const props = row.appProperties as Record<string, unknown> | undefined;
-      if (props?.owner_type !== "item" || typeof props.owner_id !== "string") return [];
-      try { return [parseAttachment(row, { type: "item", id: props.owner_id }, "photo")]; }
-      catch { return []; }
-    });
-  }
   async setCover(value: OwnerArg, photo: DrivePhoto): Promise<void> {
     const expected = owner(value);
     if (expected.type !== "item" || !await this.verifyManaged(expected, photo))
       throw new Error("封面照片不屬於目前生活事項");
-    const covers = (await this.listCovers()).filter(row => row.ownerId === expected.id && row.id !== photo.id);
+    const covers = (await this.list(expected)).filter(row => row.isCover && row.id !== photo.id);
     const patch = async (target: DrivePhoto, cover: boolean) => {
       const result = await json(await this.transport.request(`${API}/${encodeURIComponent(target.id)}?fields=id,appProperties`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },

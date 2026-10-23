@@ -129,11 +129,11 @@ it("marks one managed item photo as cover and rejects another item's photo", asy
   const second = await repo.uploadOne("item-one", secondFile, await repo.prepare("item-one", secondFile), () => {});
   await expect(repo.setCover("item-two", first)).rejects.toThrow("不屬於");
   await repo.setCover("item-one", first);
-  expect((await repo.listCovers()).map(row => row.id)).toEqual([first.id]);
+  expect((await repo.list("item-one")).filter(row => row.isCover).map(row => row.id)).toEqual([first.id]);
   await repo.setCover("item-one", second);
-  expect((await repo.listCovers()).map(row => row.id)).toEqual([second.id]);
+  expect((await repo.list("item-one")).filter(row => row.isCover).map(row => row.id)).toEqual([second.id]);
   await repo.trash("item-one", second);
-  expect(await repo.listCovers()).toEqual([]);
+  expect((await repo.list("item-one")).filter(row => row.isCover)).toEqual([]);
 });
 it("uncertain upload keeps its UUID, blocks duplicate send, then reconciles existing attachment", async () => {
   const drive = fakeDrive(), repo = new DrivePhotosRepository(drive.transport);

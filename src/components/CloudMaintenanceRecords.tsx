@@ -41,7 +41,7 @@ export function CloudHistoryList({
       {status === "ready" && (
         <div className="timeline cloud-history">
           {rows.map((record) => (
-            <article key={record.record_id}>
+            <article key={record.record_id} id={`maintenance-record-${record.record_id}`} tabIndex={-1}>
               <button type="button" className="history-toggle" aria-expanded={openRecords.has(record.record_id)}
                 aria-controls={`history-${record.record_id}`} onClick={() => setOpenRecords(current => {
                   const next = new Set(current);

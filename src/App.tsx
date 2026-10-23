@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowUpRight, LayoutGrid, Leaf } from "lucide-react";
+import { ArrowUpRight, CalendarDays, LayoutGrid, Leaf } from "lucide-react";
 import Dashboard from "./components/Dashboard";
+import MaintenanceCalendar from "./components/MaintenanceCalendar";
 import Detail from "./components/Detail";
 import ConnectionSettings from "./components/ConnectionSettings";
 import { useItemsStore } from "./hooks/useItemsStore";
@@ -12,10 +13,12 @@ export default function App() {
   const [switchingMock, setSwitchingMock] = useState(false);
   const cloud = state.mode === "cloud";
   const writable = state.status === "ready" && !state.stale && !state.busy;
+  const isCalendar = route === "#/calendar";
+  const detailParams = new URLSearchParams(route.split("?")[1] ?? "");
   let itemId: string | null = null;
   try {
     if (route.startsWith("#/items/"))
-      itemId = decodeURIComponent(route.slice(8));
+      itemId = decodeURIComponent(route.slice(8).split("?")[0]);
   } catch {
     itemId = "invalid-id";
   }
@@ -54,6 +57,7 @@ export default function App() {
             <LayoutGrid size={17} />
             生活事項
           </a>
+          <a className="nav-link calendar-nav-link" href="#/calendar"><CalendarDays size={17} />保養月曆</a>
           <div className="header-right">
             <a className="settings-link" href="#/settings">
               連線設定
@@ -136,8 +140,11 @@ export default function App() {
                 <p className="empty">正在讀取事項…</p>
               ) : state.selected?.id === itemId ? (
                 <Detail
-                  key={`${state.mode}:${itemId}`}
+                  key={`${state.mode}:${route}`}
                   item={state.selected}
+                  initialTab={detailParams.get("tab") === "history" ? "歷史紀錄" : "定期子項目"}
+                  focusPlanId={detailParams.get("plan") ?? ""}
+                  focusRecordId={detailParams.get("record") ?? ""}
                   store={store}
                   plans={state.plans}
                   records={state.records}
@@ -177,6 +184,15 @@ export default function App() {
                   )}
                 </div>
               )
+            ) : isCalendar ? (
+              <MaintenanceCalendar
+                key={state.mode}
+                items={state.items}
+                cloud={cloud}
+                readOnly={!writable}
+                overview={state.overview}
+                refresh={cloud ? store.refresh : undefined}
+              />
             ) : (
               <Dashboard
                 key={state.mode}

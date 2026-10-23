@@ -35,6 +35,7 @@ async function openHistory(page: Page) {
 async function fakeDrive(page: Page) {
   const state = { files: [] as Array<Record<string, unknown>>, pending: null as Record<string, unknown> | null,
     folderCreates: 0, uploads: 0, failUpload: false, failUploadAt: 0, failTrash: false, trashStatus: 0,
+    globalCoverQueries: 0,
     failPdfMedia: false, failPdfFirst: false, resumeAt: 256 * 1024, statusQueries: 0,
     contents: new Map<string, Buffer>(), pendingBytes: null as Buffer | null, mediaAuth: [] as string[] };
   let serial = 0;
@@ -111,6 +112,7 @@ async function fakeDrive(page: Page) {
     if (found) return fulfill({ ...found, trashed: found.trashed ?? false });
     if (url.pathname !== "/drive/v3/files") return fulfill({}, 404);
     const q = url.searchParams.get("q") ?? "";
+    if (q.includes("life_records_cover")) { state.globalCoverQueries++; return fulfill({}, 403); }
     const rows = state.files.filter(row => {
       if (row.trashed === true) return false;
       if (q.includes("attachment_id")) {
@@ -601,6 +603,15 @@ test("selected private item cover appears on home and falls back after trash", a
   await page.locator(".item-card").scrollIntoViewIfNeeded();
   await expect(page.locator(".item-card .dashboard-cover-image img")).toBeVisible();
   expect((await page.locator(".item-card .dashboard-cover-image img").getAttribute("src"))?.startsWith("blob:")).toBe(true);
+  expect(drive.globalCoverQueries).toBe(0);
+  await page.reload();
+  await expect(page.locator(".item-card .dashboard-cover-image img")).toHaveCount(0);
+  await page.locator(".item-card").click();
+  await page.getByRole("tab", {name:/照片/}).click();
+  await page.getByRole("button", {name:"連接私人 Google Drive"}).click();
+  await page.getByRole("link", {name:"所有生活事項"}).click();
+  await page.locator(".item-card").scrollIntoViewIfNeeded();
+  await expect(page.locator(".item-card .dashboard-cover-image img")).toBeVisible();
   await page.locator(".item-card").click();
   await page.getByRole("tab", {name:/照片/}).click();
   await page.getByRole("button", {name:"取消 Google Drive 授權"}).click();
